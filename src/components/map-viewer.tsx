@@ -533,6 +533,7 @@ interface MapViewerProps {
     sourceXAxisLabels: string[];
     sourceYAxisLabels: string[];
     sourceMapValues: number[][];
+    isAtdcVirtual?: boolean;
     xAxisLabel: string;
     yAxisLabel: string;
     mapName: string;
@@ -4421,6 +4422,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       sourceXAxisLabels: [...xAxisLabels],
       sourceYAxisLabels: [...yAxisLabels],
       sourceMapValues: mapValues.map((row) => [...row]),
+      isAtdcVirtual,
       xAxisLabel: parseAxisUnits().xLabel,
       yAxisLabel: parseAxisUnits().yLabel,
       mapName: mapData.name || "",
@@ -4436,6 +4438,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     displayXAxisLabels,
     displayYAxisLabels,
     displayMapValues,
+    isAtdcVirtual,
   ]);
 
   // Mode 3D: structure alignée au layout principal

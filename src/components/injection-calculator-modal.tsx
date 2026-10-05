@@ -31,6 +31,8 @@ interface Props {
   durationMaps: InjectionMapDefinition[];
   soiMaps: InjectionMapDefinition[];
   snapshots: Map<number, InjectionMapSnapshot>;
+  initialTargetIq?: number;
+  initialTargetAtdc?: number;
   onApply: (result: InjectionApplyResult) => void;
   onClose: () => void;
 }
@@ -117,6 +119,8 @@ export function InjectionCalculatorModal({
   durationMaps,
   soiMaps,
   snapshots,
+  initialTargetIq = 85,
+  initialTargetAtdc = 9,
   onApply,
   onClose,
 }: Props) {
@@ -126,8 +130,8 @@ export function InjectionCalculatorModal({
   const muted = isLight ? "rgba(17,24,39,.55)" : "rgba(255,255,255,.55)";
   const border = isLight ? "rgba(15,20,35,.12)" : "rgba(168,85,247,.25)";
 
-  const [targetIqText, setTargetIqText] = useState("85");
-  const [targetAtdcText, setTargetAtdcText] = useState("9");
+  const [targetIqText, setTargetIqText] = useState(String(initialTargetIq));
+  const [targetAtdcText, setTargetAtdcText] = useState(String(initialTargetAtdc));
   const [axisMode, setAxisMode] = useState<AxisMode>("x");
   const [direction, setDirection] = useState<Direction>("duration-to-soi");
   const [adjustAxis, setAdjustAxis] = useState(true);

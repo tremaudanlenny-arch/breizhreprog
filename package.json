@@ -2,7 +2,7 @@
   "name": "breizhreprog",
   "version": "1.19.4",
   "private": true,
-  "buildMeta": "1.19.4-map-viewer-syntax-fix",
+  "buildMeta": "1.19.4-3d-precision-fix",
   "license": "GPL-3.0-only",
   "description": "Breizh Reprog X Ninnin Projet Perf - ECU map editor",
   "scripts": {

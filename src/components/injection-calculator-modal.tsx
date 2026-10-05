@@ -195,7 +195,11 @@ export function InjectionCalculatorModal({
       && targetIq <= Math.max(...finiteSoiAxis);
     const targetInRange = durationInRange && soiInRange;
 
-    const seriesAtTarget = (values, info, mode) => {
+    const seriesAtTarget = (
+      values: number[][],
+      info: { lower: number; upper: number; t: number },
+      mode: "x" | "y",
+    ): number[] => {
       if (mode === "x") {
         return values.map((row) => {
           const a = row[info.lower];
@@ -205,7 +209,7 @@ export function InjectionCalculatorModal({
         });
       }
       const cols = values[0]?.length ?? 0;
-      const result = [];
+      const result: number[] = [];
       for (let col = 0; col < cols; col++) {
         const a = values[info.lower]?.[col];
         const b = values[info.upper]?.[col];
@@ -215,7 +219,11 @@ export function InjectionCalculatorModal({
       return result;
     };
 
-    const resampleSeries = (sourceAxis, sourceValues, targetAxis) => {
+    const resampleSeries = (
+      sourceAxis: number[],
+      sourceValues: number[],
+      targetAxis: number[],
+    ): number[] => {
       return targetAxis.map((target) => {
         const info = nearestOrBracket(sourceAxis, target);
         if (!sourceValues.length) return NaN;
@@ -229,8 +237,8 @@ export function InjectionCalculatorModal({
     const durationAtIq = seriesAtTarget(durationValues, durationInfo, durationMode);
     const soiAtIq = seriesAtTarget(soiValues, soiInfo, soiMode);
 
-    let durationSeries;
-    let soiSeries;
+    let durationSeries: number[];
+    let soiSeries: number[];
 
     if (direction === "duration-to-soi") {
       durationSeries = durationAtIq.map((v) => Number(v.toFixed(2)));

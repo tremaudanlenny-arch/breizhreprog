@@ -2106,6 +2106,7 @@ function EditorPageContent() {
   const [mapEasyViewStatus, setMapEasyViewStatus] = useState<Map<number, boolean>>(new Map());
   // ATDC tool: the derived map is ephemeral and never added to the sidebar.
   const [atdcToolOpen, setAtdcToolOpen] = useState(false);
+  const [atdcSelectedSource, setAtdcSelectedSource] = useState<MapData | null>(null);
   const [atdcToolMap, setAtdcToolMap] = useState<MapData | null>(null);
   const [atdcToolSoi, setAtdcToolSoi] = useState(90);
 
@@ -8384,12 +8385,12 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         <AtdcToolModal
           theme={theme}
           maps={atdcSourceMaps}
-          selectedMap={atdcSourceMaps.find((m) => m.address === atdcToolMap?.atdc_source_duration_address) ?? null}
+          selectedMap={atdcSelectedSource}
           soi={atdcToolSoi}
-          onSelectMap={(map) => setAtdcToolMap((current) => current?.atdc_source_duration_address === map.address ? current : current)}
+          onSelectMap={setAtdcSelectedSource}
           onSelectSoi={setAtdcToolSoi}
           onOpen={() => {
-            const source = atdcSourceMaps.find((m) => m.address === atdcToolMap?.atdc_source_duration_address);
+            const source = atdcSelectedSource;
             if (!source) {
               toast({ title: "ATDC", description: "Sélectionne une map TI1 à TI5.", variant: "destructive" });
               return;

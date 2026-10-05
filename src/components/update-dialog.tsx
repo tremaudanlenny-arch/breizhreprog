@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import { Download, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { openExternal, ZEDSUITE_RELEASES_URL } from "@/lib/open-external";
+import { openExternal, BREIZH_REPROG_RELEASES_URL } from "@/lib/open-external";
 import { MODAL_GLASS } from "@/lib/modal-glass";
 import { useI18n } from "@/contexts/i18n-context";
 import { describeUpdateError, downloadAndInstallUpdate, type UpdateInfo } from "@/lib/update";
@@ -122,7 +122,7 @@ export function UpdateDialog({ info, onClose, onSkip }: UpdateDialogProps) {
               onClick={() => void openExternal(ZEDSUITE_RELEASES_URL)}
               className="underline underline-offset-2 text-slate-200 hover:text-white"
             >
-              github.com/LeZed97/ZedSuite/releases
+              github.com/tremaudanlenny-arch/breizhreprog/releases
             </button>
           </p>
           {downloading && (

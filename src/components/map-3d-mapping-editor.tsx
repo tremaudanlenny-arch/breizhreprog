@@ -56,7 +56,9 @@ function MappingPoint({
   position,
   decimals,
   onSelect,
+  onToggleSelection,
   onStartDrag,
+  onBrushMove,
   onHover,
   onLeave,
 }: {
@@ -71,6 +73,7 @@ function MappingPoint({
   onSelect: (cell: { row: number; col: number }) => void;
   onToggleSelection: (cell: { row: number; col: number }, additive: boolean) => void;
   onStartDrag: (event: ThreeEvent<PointerEvent>, cell: { row: number; col: number }) => void;
+  onBrushMove: (event: ThreeEvent<PointerEvent>, cell: { row: number; col: number }) => void;
   onHover: () => void;
   onLeave: () => void;
 }) {
@@ -93,9 +96,14 @@ function MappingPoint({
           onToggleSelection({ row, col }, event.shiftKey);
           onStartDrag(event, { row, col });
         }}
+        onPointerMove={(event) => {
+          event.stopPropagation();
+          onBrushMove(event, { row, col });
+        }}
         onPointerOver={(event) => {
           event.stopPropagation();
           onHover();
+          onBrushMove(event, { row, col });
         }}
         onPointerOut={(event) => {
           event.stopPropagation();
@@ -170,6 +178,7 @@ export function Map3DMappingEditor({
   const historyRef = useRef<number[][][]>([]);
   const futureRef = useRef<number[][][]>([]);
   const dragRef = useRef<{ row: number; col: number; startY: number; startValue: number } | null>(null);
+  const brushStartValuesRef = useRef<Map<string, number>>(new Map());
   const draggingRef = useRef(false);
   const controlsRef = useRef<any>(null);
 
@@ -193,10 +202,30 @@ export function Map3DMappingEditor({
 
   const endDrag = () => {
     dragRef.current = null;
+    brushStartValuesRef.current.clear();
     draggingRef.current = false;
     setDragging(false);
     if (controlsRef.current) controlsRef.current.enabled = true;
     document.body.style.cursor = "default";
+  };
+
+  const applyBrushValue = (cell: { row: number; col: number }, clientY: number, fast = false) => {
+    const drag = dragRef.current;
+    if (!drag || !draggingRef.current) return;
+    const key = `${cell.row}-${cell.col}`;
+    const point = cells.find((candidate) => candidate.row === cell.row && candidate.col === cell.col);
+    if (!point) return;
+
+    if (!brushStartValuesRef.current.has(key)) {
+      brushStartValuesRef.current.set(key, point.value);
+    }
+
+    const startValue = brushStartValuesRef.current.get(key) ?? point.value;
+    let sensitivity = valueRange / 220;
+    if (fast) sensitivity *= 2;
+    const dy = clientY - drag.startY;
+    const nextValue = clamp(startValue - dy * sensitivity, effectiveMin, effectiveMax);
+    onChangeCell(cell.row, cell.col, nextValue);
   };
 
   useEffect(() => {
@@ -205,14 +234,7 @@ export function Map3DMappingEditor({
     const move = (event: PointerEvent) => {
       const active = dragRef.current;
       if (!active) return;
-
-      const dy = event.clientY - active.startY;
-      let sensitivity = valueRange / 240;
-      if (event.shiftKey) sensitivity *= 2;
-      if (event.ctrlKey || event.metaKey) sensitivity *= 0.25;
-
-      const nextValue = clamp(active.startValue - dy * sensitivity, effectiveMin, effectiveMax);
-      onChangeCell(active.row, active.col, nextValue);
+      applyBrushValue({ row: active.row, col: active.col }, event.clientY, event.shiftKey);
     };
 
     const up = () => endDrag();
@@ -229,7 +251,7 @@ export function Map3DMappingEditor({
       window.removeEventListener("pointercancel", cancel, true);
       document.body.style.cursor = "default";
     };
-  }, [dragging, effectiveMin, effectiveMax, onChangeCell, valueRange]);
+  }, [dragging, effectiveMin, effectiveMax, onChangeCell, valueRange, cells]);
 
   const startDrag = (event: ThreeEvent<PointerEvent>, cell: { row: number; col: number }) => {
     if (event.button !== 0) return;
@@ -237,6 +259,8 @@ export function Map3DMappingEditor({
     if (!point) return;
 
     draggingRef.current = true;
+    brushStartValuesRef.current.clear();
+    brushStartValuesRef.current.set(`${cell.row}-${cell.col}`, point.value);
     dragRef.current = {
       row: point.row,
       col: point.col,
@@ -244,11 +268,15 @@ export function Map3DMappingEditor({
       startValue: point.value,
     };
 
-    // Désactiver immédiatement OrbitControls via la ref, avant même que
-    // React ait le temps de rerendre avec enabled={false}.
     if (controlsRef.current) controlsRef.current.enabled = false;
     setDragging(true);
     document.body.style.cursor = "ns-resize";
+  };
+
+  const handleBrushMove = (event: ThreeEvent<PointerEvent>, cell: { row: number; col: number }) => {
+    if (!draggingRef.current) return;
+    event.stopPropagation();
+    applyBrushValue(cell, event.clientY, event.shiftKey);
   };
 
   const selectedKey = selectedCell ? `${selectedCell.row}-${selectedCell.col}` : null;
@@ -514,6 +542,7 @@ export function Map3DMappingEditor({
                 });
               }}
               onStartDrag={startDrag}
+              onBrushMove={handleBrushMove}
               onHover={() => {
                 if (!draggingRef.current) document.body.style.cursor = "grab";
               }}
@@ -540,8 +569,8 @@ export function Map3DMappingEditor({
 
       <div className="absolute left-3 top-3 z-20 w-[330px] rounded-xl border border-violet-500/30 bg-black/65 px-3 py-2 text-[10px] text-white/75 backdrop-blur-md">
         <div className="font-semibold text-violet-300">MAPPING 3D — ÉDITION</div>
-        <div>Clique une poignée · Shift+clic = sélection multiple · glisse ↑ / ↓</div>
-        <div className="opacity-55">Ctrl+Z / Ctrl+Y · opérations de calibration · caméra bloquée pendant le drag</div>
+        <div>Un point par case · clique = sélectionner · glisse ↑ / ↓</div>
+        <div className="opacity-55">Traverse les points pendant le drag pour dessiner · Shift = plus rapide · Ctrl+Z / Ctrl+Y</div>
 
         {selectedPoint && (
           <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2">
@@ -602,7 +631,9 @@ export function Map3DMappingEditor({
               <button type="button" disabled={!futureRef.current.length} className="rounded-md bg-white/10 px-2 py-1 text-[9px] disabled:opacity-30" onClick={redo}>↷ Redo</button>
             </div>
           </div>
-        )} left-3 z-20 rounded-lg border border-white/10 bg-black/45 px-2.5 py-1.5 text-[9px] text-white/60 backdrop-blur-md">
+        )      </div>
+
+      <div className="absolute left-3 bottom-3 z-20 rounded-lg border border-white/10 bg-black/45 px-2.5 py-1.5 text-[9px] text-white/60 backdrop-blur-md">
         X: {xLabels[0] ?? "—"} → {xLabels[xLabels.length - 1] ?? "—"} · Y: {yLabels[0] ?? "—"} → {yLabels[yLabels.length - 1] ?? "—"}
       </div>
 

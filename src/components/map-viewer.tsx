@@ -524,9 +524,15 @@ interface MapViewerProps {
   // Callback pour partager les données 3D avec le parent (pour Preview window)
   onPlot3DDataChange?: (mapAddress: number, data: {
     plot3DData: any[];
+    /** Données affichées (orientation/miroirs appliqués), pour la preview. */
     xAxisLabels: string[];
     yAxisLabels: string[];
     mapValues: number[][];
+    /** Données canoniques issues de la carte, avant les transformations
+     * d'affichage. Utilisées par l'ATDC pour calculer sur les bons axes. */
+    sourceXAxisLabels: string[];
+    sourceYAxisLabels: string[];
+    sourceMapValues: number[][];
     xAxisLabel: string;
     yAxisLabel: string;
     mapName: string;
@@ -3268,48 +3274,110 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     const colsReversed = xLabelsWereReversed;
      
 
-    // ATDC live : privilégier les snapshots actuels des maps sources.
-    // Ils contiennent les modifications 2D/3D déjà appliquées par l'utilisateur,
-    // contrairement à une nouvelle lecture directe de fileData.
+    // ATDC live : la durée et la SOI doivent provenir de l'état CANONIQUE
+    // des maps, pas de leur orientation d'affichage. Cela évite les décalages
+    // quand une map est miroir/transposée et permet un vrai calcul TI - SOI.
     if (isAtdcVirtual && liveMapSnapshots) {
       const durationSnapshot = liveMapSnapshots.get(sourceMapAddress);
       const soiSnapshot = atdcSoiMap ? liveMapSnapshots.get(atdcSoiMap.address) : undefined;
-      const durationValues = durationSnapshot?.mapValues;
-      const soiValues = soiSnapshot?.mapValues;
+      const durationValues = durationSnapshot?.sourceMapValues ?? durationSnapshot?.mapValues;
+      const soiValues = soiSnapshot?.sourceMapValues ?? soiSnapshot?.mapValues;
+      const durationX = durationSnapshot?.sourceXAxisLabels ?? durationSnapshot?.xAxisLabels ?? [];
+      const durationY = durationSnapshot?.sourceYAxisLabels ?? durationSnapshot?.yAxisLabels ?? [];
+      const soiX = soiSnapshot?.sourceXAxisLabels ?? soiSnapshot?.xAxisLabels ?? [];
+      const soiY = soiSnapshot?.sourceYAxisLabels ?? soiSnapshot?.yAxisLabels ?? [];
+
+      const numericAxis = (axis: string[]) => axis.map((v) => Number.parseFloat(String(v)));
+
+      const findBracket = (axis: number[], target: number) => {
+        if (!axis.length || !Number.isFinite(target)) return null;
+        const finite = axis.every(Number.isFinite);
+        if (!finite) return null;
+        if (axis.length === 1) return { i0: 0, i1: 0, t: 0 };
+        const ascending = axis[0] <= axis[axis.length - 1];
+        const work = ascending ? axis : [...axis].reverse();
+        let j = 0;
+        if (target <= work[0]) j = 0;
+        else if (target >= work[work.length - 1]) j = work.length - 2;
+        else {
+          for (let i = 0; i < work.length - 1; i++) {
+            if (target >= work[i] && target <= work[i + 1]) {
+              j = i;
+              break;
+            }
+          }
+        }
+        const a = work[j];
+        const b = work[j + 1];
+        const t = b === a ? 0 : (target - a) / (b - a);
+        return ascending
+          ? { i0: j, i1: j + 1, t }
+          : { i0: axis.length - 1 - j, i1: axis.length - 1 - (j + 1), t };
+      };
+
+      const sample2d = (
+        matrix: number[][],
+        xAxis: number[],
+        yAxis: number[],
+        x: number,
+        y: number,
+      ): number | null => {
+        if (!matrix.length || !matrix[0]?.length) return null;
+        const rows = matrix.length;
+        const cols = matrix[0].length;
+
+        // 1D map: use whichever non-trivial axis matches the target coordinate.
+        if (rows === 1 || cols === 1) {
+          const oneD = rows === 1 ? matrix[0] : matrix.map((row) => row[0]);
+          const axisCandidates = rows === 1 ? [xAxis, yAxis] : [yAxis, xAxis];
+          const preferredTarget = rows === 1 ? [x] : [y];
+          for (let k = 0; k < axisCandidates.length; k++) {
+            const axis = numericAxis(axisCandidates[k]);
+            const brackets = findBracket(axis, preferredTarget[k]);
+            if (!brackets) continue;
+            const values1d = rows === 1
+              ? matrix[0]
+              : matrix.map((row) => row[0]);
+            const a = values1d[brackets.i0] ?? values1d[0];
+            const b = values1d[brackets.i1] ?? a;
+            return a + (b - a) * brackets.t;
+          }
+          return Number.isFinite(oneD[0]) ? oneD[0] : null;
+        }
+
+        const xb = findBracket(numericAxis(xAxis), x);
+        const yb = findBracket(numericAxis(yAxis), y);
+        if (!xb || !yb) return null;
+        const q11 = matrix[yb.i0]?.[xb.i0];
+        const q21 = matrix[yb.i0]?.[xb.i1];
+        const q12 = matrix[yb.i1]?.[xb.i0];
+        const q22 = matrix[yb.i1]?.[xb.i1];
+        if (![q11, q21, q12, q22].every(Number.isFinite)) return null;
+        const a = q11 + (q21 - q11) * xb.t;
+        const b = q12 + (q22 - q12) * xb.t;
+        return a + (b - a) * yb.t;
+      };
 
       if (
-        durationValues &&
-        durationValues.length > 0 &&
+        durationValues?.length &&
         durationValues[0]?.length &&
-        soiValues &&
-        soiValues.length > 0 &&
+        soiValues?.length &&
         soiValues[0]?.length
       ) {
-        const liveRows = durationValues.length;
-        const liveCols = durationValues[0].length;
-        const soiRows = soiValues.length;
-        const soiCols = soiValues[0].length;
-
+        const durationRows = durationValues.length;
+        const durationCols = durationValues[0].length;
         const liveAtdc = durationValues.map((row, r) =>
           row.map((durationValue, c) => {
-            const soiRow = liveRows > 1 && soiRows > 1
-              ? Math.round(r * (soiRows - 1) / (liveRows - 1))
-              : 0;
-            const soiCol = liveCols > 1 && soiCols > 1
-              ? Math.round(c * (soiCols - 1) / (liveCols - 1))
-              : 0;
-            const soiValue = Number(soiValues[soiRow]?.[soiCol]);
-            return Number.isFinite(soiValue) ? durationValue - soiValue : durationValue;
+            const x = Number.parseFloat(String(durationX[c] ?? ""));
+            const y = Number.parseFloat(String(durationY[r] ?? ""));
+            const soiValue = sample2d(soiValues, soiX, soiY, x, y);
+            return Number.isFinite(soiValue) ? Number(durationValue) - Number(soiValue) : Number(durationValue);
           }),
         );
 
         values.splice(0, values.length, ...liveAtdc);
-        if (durationSnapshot.xAxisLabels?.length) {
-          xLabels.splice(0, xLabels.length, ...durationSnapshot.xAxisLabels);
-        }
-        if (durationSnapshot.yAxisLabels?.length) {
-          yLabels.splice(0, yLabels.length, ...durationSnapshot.yAxisLabels);
-        }
+        if (durationX.length) xLabels.splice(0, xLabels.length, ...durationX);
+        if (durationY.length) yLabels.splice(0, yLabels.length, ...durationY);
       }
     }
 
@@ -3786,10 +3854,17 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
 
   const updateDisplayCells = useCallback((changes: Array<{ row: number; col: number; value: number }>) => {
     if (isAtdcVirtual || !changes.length) return;
-    const normalized = changes.map((change) => ({
-      ...change,
-      value: clampValue(change.value),
-    }));
+    // Map3D travaille en coordonnées AFFICHÉES. Toujours traduire vers
+    // mapValues avant d'écrire, exactement comme un clic 2D, sinon les maps
+    // dont X/Y sont inversés ou transposés modifient la mauvaise cellule.
+    const normalized = changes.map((change) => {
+      const mapped = toMapCoords(change.row, change.col);
+      return {
+        row: mapped.row,
+        col: mapped.col,
+        value: clampValue(change.value),
+      };
+    });
     setMapValues((prev) => {
       const next = prev.map((row) => [...row]);
       normalized.forEach(({ row, col, value }) => {
@@ -3807,7 +3882,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       });
       return next;
     });
-  }, [isAtdcVirtual]);
+  }, [isAtdcVirtual, toMapCoords]);
   const updateDisplayCellValue = useCallback((displayRow: number, displayCol: number, value: number) => {
     const mapped = toMapCoords(displayRow, displayCol);
     updateCellValue(mapped.row, mapped.col, value);
@@ -4343,6 +4418,9 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       xAxisLabels: [...displayXAxisLabels],
       yAxisLabels: [...displayYAxisLabels],
       mapValues: displayMapValues.map((row) => [...row]),
+      sourceXAxisLabels: [...xAxisLabels],
+      sourceYAxisLabels: [...yAxisLabels],
+      sourceMapValues: mapValues.map((row) => [...row]),
       xAxisLabel: parseAxisUnits().xLabel,
       yAxisLabel: parseAxisUnits().yLabel,
       mapName: mapData.name || "",
@@ -4352,6 +4430,9 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     onPlot3DDataChange,
     mapData.address,
     plot3DData,
+    xAxisLabels,
+    yAxisLabels,
+    mapValues,
     displayXAxisLabels,
     displayYAxisLabels,
     displayMapValues,

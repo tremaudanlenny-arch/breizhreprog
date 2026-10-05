@@ -1317,7 +1317,7 @@ function DashboardContent() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center bg-gradient-to-br from-violet-600/20 to-purple-500/10 border border-violet-400/20"><span className="text-lg font-black text-violet-300">BR</span></div>
+              <div className="w-10 h-10 rounded-lg overflow-hidden border border-violet-400/20 bg-black/40 flex items-center justify-center"><img src="/breizh-reprog-logo.svg" alt="Breizh Reprog" className="w-full h-full object-cover" /></div>
               <div>
                 <h3 className={`text-lg font-semibold leading-tight ${theme === "light" ? "text-slate-900" : "text-white"}`}>Breizh Reprog</h3>
                 <p className={`text-xs ${theme === "light" ? "text-slate-500" : "text-slate-400"}`}>{appVersion ? `v${appVersion}` : 'Breizh Reprog'} — Open source, GPL-3.0</p>

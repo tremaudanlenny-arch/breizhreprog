@@ -490,7 +490,7 @@ pub async fn download_and_install_update(
 /// macOS side of the updater: an app is a `.app` folder, there is no
 /// installer. The archive published with each release is extracted next to
 /// the running bundle (same volume, so the swap is a rename), checked, then
-/// swapped in; the previous bundle is kept as `.ZedSuite-previous.app` until
+/// swapped in; the previous bundle is kept as `.BreizhReprog-previous.app` until
 /// the new one has been reopened. Files written by the app itself carry no
 /// quarantine flag, so Gatekeeper does not step in on the relaunch — the
 /// "Open anyway" step exists only for the first manual install.
@@ -501,8 +501,8 @@ pub mod macos {
 
     /// Name of the app bundle inside the archive and in Applications.
     pub const BUNDLE_NAME: &str = "Breizh Reprog.app";
-    const STAGING_DIR: &str = ".ZedSuite-update";
-    const BACKUP_DIR: &str = ".ZedSuite-previous.app";
+    const STAGING_DIR: &str = ".BreizhReprog-update";
+    const BACKUP_DIR: &str = ".BreizhReprog-previous.app";
 
     /// Surfaced to the frontend as `macos:<code>` and translated there.
     #[derive(Debug)]
@@ -624,7 +624,7 @@ pub mod macos {
 
         // 3. Sanity: the binary is there and Info.plist carries the version
         //    the dialog announced.
-        let exe = new_app.join("Contents").join("MacOS").join("ZedSuite");
+        let exe = new_app.join("Contents").join("MacOS").join("BreizhReprog");
         if !exe.is_file() {
             let _ = std::fs::remove_dir_all(&staging);
             return Err(InstallError::InstallFailed(

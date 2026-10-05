@@ -58,7 +58,7 @@ export function UpdateDialog({ info, onClose, onSkip }: UpdateDialogProps) {
       if (isLinux()) {
         // Release without a Linux asset (or a copy that is neither an
         // AppImage nor a .deb install): the releases page instead.
-        void openExternal(ZEDSUITE_RELEASES_URL);
+        void openExternal(BREIZH_REPROG_RELEASES_URL);
         return;
       }
       // Release sans build pour cette plateforme (macOS publié après Windows)
@@ -119,7 +119,7 @@ export function UpdateDialog({ info, onClose, onSkip }: UpdateDialogProps) {
             {t.updateDialog.allReleases}{" "}
             <button
               type="button"
-              onClick={() => void openExternal(ZEDSUITE_RELEASES_URL)}
+              onClick={() => void openExternal(BREIZH_REPROG_RELEASES_URL)}
               className="underline underline-offset-2 text-slate-200 hover:text-white"
             >
               github.com/tremaudanlenny-arch/breizhreprog/releases

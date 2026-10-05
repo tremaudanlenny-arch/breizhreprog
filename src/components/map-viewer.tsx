@@ -1801,6 +1801,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     handlePromptEdit(cell.row, cell.col, value);
   };
 
+
   const plot3DRenderData = useMemo(() => {
     if (!mapping3DMode || !selected3DCell) return plot3DData;
     const needsYReverse =
@@ -4222,6 +4223,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         : []),
     ];
   }, [displayMapValues, displayXAxisLabels, displayYAxisLabels, theme, disableGraphColors]);
+
 
   // Étiquettes d'axes (indices → vraies valeurs) pour les deux layouts 3D
   const plot3DTicks = useMemo(

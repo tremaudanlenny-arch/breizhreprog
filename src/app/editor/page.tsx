@@ -2120,6 +2120,43 @@ function EditorPageContent() {
   // Clé: mapAddress, Valeur: Record<cellKey, newValue>
   const [allMapModifications, setAllMapModifications] = useState<Map<number, Record<string, number>>>(new Map());
 
+  // Historique global des modifications de calibration. Les snapshots restent
+  // indépendants des refs des fenêtres : une action 2D, 3D, ATDC ou calculateur
+  // peut donc être annulée avec le même Ctrl+Z.
+  type MapEditHistorySnapshot = {
+    maps: Map<number, Record<string, number>>;
+    axes: Map<number, { x?: string[]; y?: string[] }>;
+  };
+  const mapEditHistoryRef = useRef<MapEditHistorySnapshot[]>([]);
+  const mapEditFutureRef = useRef<MapEditHistorySnapshot[]>([]);
+  const restoringMapHistoryRef = useRef(false);
+
+  const cloneMapEdits = (source: Map<number, Record<string, number>>) => {
+    const next = new Map<number, Record<string, number>>();
+    source.forEach((cells, address) => next.set(address, { ...cells }));
+    return next;
+  };
+
+  const cloneMapAxes = (source: Map<number, { x?: string[]; y?: string[] }>) => {
+    const next = new Map<number, { x?: string[]; y?: string[] }>();
+    source.forEach((axes, address) => next.set(address, {
+      x: axes.x ? [...axes.x] : undefined,
+      y: axes.y ? [...axes.y] : undefined,
+    }));
+    return next;
+  };
+
+  const pushMapEditHistory = useCallback((maps: Map<number, Record<string, number>>, axes: Map<number, { x?: string[]; y?: string[] }>) => {
+    if (restoringMapHistoryRef.current) return;
+    mapEditHistoryRef.current = [
+      ...mapEditHistoryRef.current.slice(-40),
+      { maps: cloneMapEdits(maps), axes: cloneMapAxes(axes) },
+    ];
+    mapEditFutureRef.current = [];
+  }, []);
+
+
+
   // Persisted axis-label edits per map, so closing/reopening a map keeps the
   // user's edited labels instead of falling back to the values read from the
   // file. Stored as state (not ref) so that re-renders propagate the
@@ -2127,37 +2164,32 @@ function EditorPageContent() {
   // `initialYAxisLabels`.
   const [mapAxisLabels, setMapAxisLabels] = useState<Map<number, { x?: string[]; y?: string[] }>>(new Map());
   const handleAxisLabelsChange = useCallback((mapAddress: number, axes: { x?: string[]; y?: string[] }) => {
+    if (restoringMapHistoryRef.current) return;
     setMapAxisLabels(prev => {
       const existing = prev.get(mapAddress) || {};
-      // Tableau vide = axe revenu à l'origine → on retire l'entrée
       const merged = {
         x: axes.x !== undefined ? (axes.x.length > 0 ? axes.x : undefined) : existing.x,
         y: axes.y !== undefined ? (axes.y.length > 0 ? axes.y : undefined) : existing.y,
       };
       if (!merged.x && !merged.y) {
         if (!prev.has(mapAddress)) return prev;
+        pushMapEditHistory(allMapModifications, prev);
         const next = new Map(prev);
         next.delete(mapAddress);
-        // Retirer un axe édité est aussi une modification à enregistrer
-        if (!isLoadingVersionRef.current) {
-          setTimeout(() => setHasUnsavedChanges(true), 0);
-        }
+        if (!isLoadingVersionRef.current) setTimeout(() => setHasUnsavedChanges(true), 0);
         return next;
       }
       const prevEntry = prev.get(mapAddress);
       const xSame = JSON.stringify(prevEntry?.x) === JSON.stringify(merged.x);
       const ySame = JSON.stringify(prevEntry?.y) === JSON.stringify(merged.y);
       if (xSame && ySame) return prev;
+      pushMapEditHistory(allMapModifications, prev);
       const next = new Map(prev);
       next.set(mapAddress, merged);
-      // Axis label edits need to be persisted just like cell edits.
-      // Mark as dirty so the next Save call picks them up.
-      if (!isLoadingVersionRef.current) {
-        setTimeout(() => setHasUnsavedChanges(true), 0);
-      }
+      if (!isLoadingVersionRef.current) setTimeout(() => setHasUnsavedChanges(true), 0);
       return next;
     });
-  }, []);
+  }, [allMapModifications, pushMapEditHistory]);
 
   // Store pour les modifications binaires directes (DTCs, etc.)
   // Clé: address, Valeur: { oldValue, newValue }
@@ -4620,6 +4652,8 @@ function EditorPageContent() {
     previousVersionIdRef.current = currentVersionId;
 
     if (!currentVersionId) {
+      mapEditHistoryRef.current = [];
+      mapEditFutureRef.current = [];
       setAllMapModifications(new Map());
       setMapAxisLabels(new Map());
       setHasUnsavedChanges(false);
@@ -4664,35 +4698,31 @@ function EditorPageContent() {
 
   // Callback stable pour gérer les modifications de map
   const handleMapModifications = useCallback((mapAddress: number, changedCells: Record<string, number>) => {
+    if (restoringMapHistoryRef.current) return;
     setAllMapModifications(prev => {
       const next = new Map(prev);
       const currentCells = prev.get(mapAddress);
       const newCellsStr = JSON.stringify(changedCells);
       const currentCellsStr = JSON.stringify(currentCells || {});
 
-      // Only update if actually different
-      if (newCellsStr === currentCellsStr) {
-        return prev; // No change, return same reference
-      }
+      if (newCellsStr === currentCellsStr) return prev;
 
-      if (Object.keys(changedCells).length === 0) {
-        next.delete(mapAddress);
-      } else {
-        next.set(mapAddress, changedCells);
-      }
+      pushMapEditHistory(prev, mapAxisLabels);
 
-      // Mark as dirty only if NOT loading a version (real user edit)
-      // We check inside the setter to ensure we only mark dirty for actual changes
+      if (Object.keys(changedCells).length === 0) next.delete(mapAddress);
+      else next.set(mapAddress, { ...changedCells });
+
       if (!isLoadingVersionRef.current) {
-        // Use setTimeout to avoid setState during render
         setTimeout(() => setHasUnsavedChanges(true), 0);
       }
-
       return next;
     });
-  }, []);
+  }, [pushMapEditHistory, mapAxisLabels]);
 
   const handleInjectionCalculatorApply = useCallback((result: InjectionApplyResult) => {
+    if (!restoringMapHistoryRef.current) {
+      pushMapEditHistory(allMapModifications, mapAxisLabels);
+    }
     let changedCount = 0;
     setAllMapModifications((prev) => {
       const next = new Map(prev);
@@ -4724,7 +4754,53 @@ function EditorPageContent() {
       title: "Calculateur Injection",
       description: String(changedCount) + " cellule(s) calculée(s) et prêtes à être enregistrées.",
     });
-  }, [toast]);
+  }, [toast, allMapModifications, mapAxisLabels, pushMapEditHistory]);
+
+  const undoMapEditHistory = useCallback(() => {
+    const previous = mapEditHistoryRef.current.pop();
+    if (!previous) return;
+    mapEditFutureRef.current = [
+      ...mapEditFutureRef.current.slice(-40),
+      { maps: cloneMapEdits(allMapModifications), axes: cloneMapAxes(mapAxisLabels) },
+    ];
+    restoringMapHistoryRef.current = true;
+    setAllMapModifications(cloneMapEdits(previous.maps));
+    setMapAxisLabels(cloneMapAxes(previous.axes));
+    setHasUnsavedChanges(true);
+    setTimeout(() => { restoringMapHistoryRef.current = false; }, 0);
+  }, [allMapModifications, mapAxisLabels]);
+
+  const redoMapEditHistory = useCallback(() => {
+    const next = mapEditFutureRef.current.pop();
+    if (!next) return;
+    mapEditHistoryRef.current = [
+      ...mapEditHistoryRef.current.slice(-40),
+      { maps: cloneMapEdits(allMapModifications), axes: cloneMapAxes(mapAxisLabels) },
+    ];
+    restoringMapHistoryRef.current = true;
+    setAllMapModifications(cloneMapEdits(next.maps));
+    setMapAxisLabels(cloneMapAxes(next.axes));
+    setHasUnsavedChanges(true);
+    setTimeout(() => { restoringMapHistoryRef.current = false; }, 0);
+  }, [allMapModifications, mapAxisLabels]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select" || target?.isContentEditable) return;
+      if (event.key.toLowerCase() === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undoMapEditHistory();
+      } else if (event.key.toLowerCase() === "y" || (event.key.toLowerCase() === "z" && event.shiftKey)) {
+        event.preventDefault();
+        redoMapEditHistory();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undoMapEditHistory, redoMapEditHistory]);
 
   /** Binaire et modifications de la version ouverte, tels qu'en mémoire
    *  (enregistrés ou non) — même forme que les édits du store, pour que la
@@ -6339,6 +6415,23 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         color: getTextColor(),
       }}
     >
+      <div className="my-1 border-t" style={{ borderColor: getBorderColor() }} />
+      <div className="grid grid-cols-2 gap-1 px-1 pb-1">
+        <button
+          type="button"
+          onClick={() => { setToolsMenuOpen(false); undoMapEditHistory(); }}
+          className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-left transition-colors ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+        >
+          <span className="text-sm">↶</span><span className="text-[11px]">Undo</span><span className="text-[9px] opacity-40">Ctrl+Z</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => { setToolsMenuOpen(false); redoMapEditHistory(); }}
+          className={`flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-left transition-colors ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+        >
+          <span className="text-sm">↷</span><span className="text-[11px]">Redo</span><span className="text-[9px] opacity-40">Ctrl+Y</span>
+        </button>
+      </div>
       <button
         type="button"
         onClick={openAtdcTool}

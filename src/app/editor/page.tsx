@@ -4696,7 +4696,7 @@ function EditorPageContent() {
    *  maps de l'éditeur (celle du store peut être en retard d'une détection). */
   /** Maps venues d'un projet WinOLS d'un calculateur non pris en charge :
    *  les solutions, les codes défaut et l'estimation de puissance reposent
-   *  tous sur des maps nommées par le détecteur ZedSuite, qui n'existent pas
+   *  tous sur des maps nommées par le détecteur Breizh Reprog, qui n'existent pas
    *  ici. On le dit au lieu d'ouvrir une fenêtre vide. */
   /** Import d'un fichier de définitions de maps (.xdf TunerPro ou mappack
    *  .json) : c'est ainsi qu'un binaire que le détecteur ne reconnaît pas
@@ -6772,7 +6772,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     );
   }
 
-  /** Une racine de l'arbre des maps : celle du détecteur ZedSuite, et,
+  /** Une racine de l'arbre des maps : celle du détecteur Breizh Reprog, et,
    *  pour un projet WinOLS qui en apporte, celle de ses propres maps.
    *  Même rendu pour les deux ; seul le mappack de l'app porte le badge
    *  de complétude (les règles n'ont pas de sens sur une liste écrite à
@@ -7537,7 +7537,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               </button>
             </div>
 
-            {/* Mappack du détecteur ZedSuite. Une racine vide n'est jamais
+            {/* Mappack du détecteur Breizh Reprog. Une racine vide n'est jamais
                 affichée : un projet dont le calculateur n'est pas reconnu, ou
                 qui attend encore ses définitions de maps, ne montre que le
                 Hexdump et le bouton d'import. */}

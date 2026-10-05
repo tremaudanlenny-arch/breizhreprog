@@ -7172,13 +7172,16 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               macOS cela le garde aussi à droite des feux de la fenêtre, à
               tous les zooms. */}
           <div data-tauri-drag-region className="mb-4 flex items-center justify-center">
-            <div data-tauri-drag-region className="relative inline-block">
+            <div data-tauri-drag-region className="relative inline-flex flex-col items-center gap-1">
               <img
                 src="/breizh-reprog-logo.svg"
-                alt="Breizh Reprog"
+                alt="Breizh Reprog X Ninnin"
                 data-tauri-drag-region
                 className="h-10 w-auto max-w-[210px] object-contain"
               />
+              <span className="text-[11px] font-semibold tracking-wide" style={{ color: theme === 'light' ? 'rgba(0,0,0,0.72)' : 'rgba(255,255,255,0.82)' }}>
+                Breizh Reprog X Ninnin
+              </span>
             </div>
           </div>
 

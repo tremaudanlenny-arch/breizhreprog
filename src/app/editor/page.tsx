@@ -166,6 +166,7 @@ interface MapData {
   x_axis_values?: number[] | null;
   y_axis_values?: number[] | null;
   atdc_source_duration_address?: number;
+  atdc_source_duration_map?: MapData;
   atdc_source_soi_map?: MapData;
   atdc_soi_default?: number;
   virtual_readonly?: boolean;

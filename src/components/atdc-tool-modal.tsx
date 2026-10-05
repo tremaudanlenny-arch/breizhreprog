@@ -53,18 +53,28 @@ export function AtdcToolModal({
   const selectedSoiMap = findSoi(soi);
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center px-4" style={{ background: "rgba(0,0,0,0.32)", backdropFilter: "blur(3px)" }}>
+    <div className="fixed inset-0 z-[200] flex items-center justify-center px-4" style={{ background: "radial-gradient(circle at center, rgba(124,58,237,0.16), rgba(0,0,0,0.68))", backdropFilter: "blur(8px)" }}>
       <div
-        className="w-full max-w-2xl rounded-xl shadow-2xl overflow-hidden"
-        style={{ background: surface, border: `1px solid ${border}`, color: text }}
+        className="relative w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden"
+        style={{
+          background: theme === "light"
+            ? surface
+            : "linear-gradient(145deg, rgba(18,12,30,0.98), rgba(9,11,18,0.98))",
+          border: `1px solid ${theme === "light" ? border : "rgba(168,85,247,0.35)"}`,
+          color: text,
+          boxShadow: theme === "light"
+            ? "0 24px 70px rgba(0,0,0,0.22)"
+            : "0 0 25px rgba(139,92,246,0.16), 0 24px 90px rgba(0,0,0,0.7)",
+        }}
       >
-        <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${border}` }}>
+        <div className="absolute -inset-20 bg-gradient-to-r from-violet-600/10 via-fuchsia-500/10 to-cyan-400/10 blur-3xl animate-pulse pointer-events-none" />
+        <div className="relative flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${border}` }}>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-gradient-to-br from-violet-600 to-fuchsia-500">
               <Calculator className="w-4 h-4 text-white" />
             </div>
             <div>
-              <div className="text-sm font-semibold">Calculateur ATDC</div>
+              <div className="text-sm font-black tracking-wide">Calculateur ATDC</div>
               <div className="text-[11px]" style={{ color: muted }}>ATDC = TI − SOI cellule par cellule</div>
             </div>
           </div>

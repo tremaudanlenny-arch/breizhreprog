@@ -5,6 +5,10 @@ on:
   push:
     branches:
       - master
+    paths:
+      - package.json
+      - src-tauri/Cargo.toml
+      - src-tauri/tauri.conf.json
 permissions:
   contents: write
 

@@ -2294,7 +2294,7 @@ function EditorPageContent() {
   // Zoom de l'éditeur (webview native, persisté) — boutons +/− de la toolbar
   const [editorZoom, setEditorZoom] = useState<number>(() => storedEditorZoomPercent());
   useEffect(() => {
-    localStorage.setItem("zedsuite-editor-zoom", String(editorZoom));
+    localStorage.setItem("breizhreprog-editor-zoom", String(editorZoom));
   }, [editorZoom]);
   // Largeur logique de la fenêtre, suivie en direct : le zoom appliqué
   // s'adapte pour que la barre d'outils et la liste des maps tiennent

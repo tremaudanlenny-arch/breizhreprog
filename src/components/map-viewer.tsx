@@ -87,14 +87,19 @@ function splitGridAxes(grid: string[][]): { values: string[][]; axes: { x: strin
 }
 
 // Backed by localStorage so a copy in one tab is paste-able in another tab.
-const CLIPBOARD_STORAGE_KEY = 'zedsuite_map_clipboard';
+const CLIPBOARD_STORAGE_KEY = 'breizhreprog_map_clipboard';
+const LEGACY_CLIPBOARD_STORAGE_KEY = 'zedsuite_map_clipboard';
 let inMemoryClipboard: InternalClipboard | null = null;
 
 function readClipboard(): InternalClipboard | null {
   if (typeof window === 'undefined') return inMemoryClipboard;
   try {
-    const raw = window.localStorage.getItem(CLIPBOARD_STORAGE_KEY);
+    const raw = window.localStorage.getItem(CLIPBOARD_STORAGE_KEY)
+      ?? window.localStorage.getItem(LEGACY_CLIPBOARD_STORAGE_KEY);
     if (!raw) return null;
+    if (!window.localStorage.getItem(CLIPBOARD_STORAGE_KEY)) {
+      window.localStorage.setItem(CLIPBOARD_STORAGE_KEY, raw);
+    }
     return JSON.parse(raw) as InternalClipboard;
   } catch {
     return inMemoryClipboard;
@@ -113,6 +118,7 @@ function writeClipboard(value: InternalClipboard | null): void {
       window.localStorage.removeItem(CLIPBOARD_STORAGE_KEY);
     } else {
       window.localStorage.setItem(CLIPBOARD_STORAGE_KEY, JSON.stringify(value));
+      window.localStorage.removeItem(LEGACY_CLIPBOARD_STORAGE_KEY);
     }
   } catch {
     // localStorage may be unavailable (private mode, quota) — keep in-memory only.
@@ -642,6 +648,54 @@ export function MapViewer({
   const [atdcThreshold, setAtdcThreshold] = useState(0);
   const [atdcSaturation, setAtdcSaturation] = useState(1);
   const [atdcContrast, setAtdcContrast] = useState(1);
+  const atdcSkipPersistRef = useRef(false);
+  const atdcRenderStorageKey = useMemo(
+    () => "breizhreprog-atdc-render:" + encodeURIComponent(projectName || "default") + ":" + encodeURIComponent(fileName || "default") + ":" + mapData.address.toString(16) + ":" + atdcSoi,
+    [projectName, fileName, mapData.address, atdcSoi],
+  );
+
+  useEffect(() => {
+    atdcSkipPersistRef.current = true;
+    if (!isAtdcVirtual) {
+      setAtdcThreshold(0);
+      setAtdcSaturation(1);
+      setAtdcContrast(1);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(atdcRenderStorageKey);
+      if (!raw) {
+        setAtdcThreshold(0);
+        setAtdcSaturation(1);
+        setAtdcContrast(1);
+        return;
+      }
+      const parsed = JSON.parse(raw) as Partial<{ threshold: number; saturation: number; contrast: number }>;
+      setAtdcThreshold(typeof parsed.threshold === "number" ? Math.max(0, Math.min(0.95, parsed.threshold)) : 0);
+      setAtdcSaturation(typeof parsed.saturation === "number" ? Math.max(0.5, Math.min(2.5, parsed.saturation)) : 1);
+      setAtdcContrast(typeof parsed.contrast === "number" ? Math.max(0.5, Math.min(2, parsed.contrast)) : 1);
+    } catch {
+      setAtdcThreshold(0);
+      setAtdcSaturation(1);
+      setAtdcContrast(1);
+    }
+  }, [atdcRenderStorageKey, isAtdcVirtual]);
+
+  useEffect(() => {
+    if (!isAtdcVirtual) return;
+    if (atdcSkipPersistRef.current) {
+      atdcSkipPersistRef.current = false;
+      return;
+    }
+    try {
+      localStorage.setItem(
+        atdcRenderStorageKey,
+        JSON.stringify({ threshold: atdcThreshold, saturation: atdcSaturation, contrast: atdcContrast }),
+      );
+    } catch {
+      // localStorage peut être indisponible dans certains environnements de dev.
+    }
+  }, [isAtdcVirtual, atdcRenderStorageKey, atdcThreshold, atdcSaturation, atdcContrast]);
 
   // Active value-edit prompt (cell / X axis / Y axis). null = closed. The
   // themed PromptModal replaces the native window.prompt() so it matches the

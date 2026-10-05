@@ -5,7 +5,7 @@
 // calls and keeps the check state in localStorage:
 //  - updateLastCheck       timestamp of the last background check (24h cadence)
 //  - updateSkippedVersion  release tag the user chose to skip
-//  - zedsuiteFirstRunDone  set once the first-run dialog has been completed
+//  - breizhreprogFirstRunDone  set once the first-run dialog has been completed
 
 import { invoke } from "@tauri-apps/api/core";
 
@@ -20,7 +20,8 @@ export interface UpdateInfo {
 
 const LS_LAST_CHECK = "updateLastCheck";
 const LS_SKIPPED = "updateSkippedVersion";
-const LS_FIRST_RUN = "zedsuiteFirstRunDone";
+const LS_FIRST_RUN = "breizhreprogFirstRunDone";
+const LEGACY_LS_FIRST_RUN = "zedsuiteFirstRunDone";
 // Version proposée mais ni installée ni passée (« La prochaine fois ») :
 // la fenêtre doit être RE-proposée à chaque démarrage de l'app, sans
 // attendre la cadence de 24 h.
@@ -29,7 +30,7 @@ const LS_PENDING = "updatePendingVersion";
 export const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // once a day
 
 /** Custom event dispatched to open the update dialog (detail: UpdateInfo). */
-export const UPDATE_AVAILABLE_EVENT = "zedsuite-update-available";
+export const UPDATE_AVAILABLE_EVENT = "breizhreprog-update-available";
 
 export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -105,11 +106,15 @@ export function clearPendingUpdate(): void {
 }
 
 export function isFirstRun(): boolean {
+  if (!localStorage.getItem(LS_FIRST_RUN) && localStorage.getItem(LEGACY_LS_FIRST_RUN)) {
+    localStorage.setItem(LS_FIRST_RUN, "1");
+  }
   return !localStorage.getItem(LS_FIRST_RUN);
 }
 
 export function markFirstRunDone(): void {
   localStorage.setItem(LS_FIRST_RUN, "1");
+  localStorage.removeItem(LEGACY_LS_FIRST_RUN);
 }
 
 /**

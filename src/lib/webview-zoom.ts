@@ -72,15 +72,16 @@ export const APP_ZOOM_STEP = 5;
 /** Zoom d'ouverture du dashboard, réglable puis mémorisé. */
 export const DASHBOARD_DEFAULT_ZOOM_PERCENT = 90;
 
-function storedZoomPercent(key: string, fallback: number): number {
+function storedZoomPercent(key: string, fallback: number, legacyKey?: string): number {
   if (typeof window === "undefined") return fallback;
   try {
-    const saved = parseInt(localStorage.getItem(key) || "", 10);
-    return Number.isFinite(saved)
-      && saved >= APP_MIN_ZOOM_PERCENT
-      && saved <= APP_MAX_ZOOM_PERCENT
-      ? saved
-      : fallback;
+    const raw = localStorage.getItem(key) ?? (legacyKey ? localStorage.getItem(legacyKey) : null);
+    const saved = parseInt(raw || "", 10);
+    if (Number.isFinite(saved) && saved >= APP_MIN_ZOOM_PERCENT && saved <= APP_MAX_ZOOM_PERCENT) {
+      if (!localStorage.getItem(key) && legacyKey) localStorage.setItem(key, String(saved));
+      return saved;
+    }
+    return fallback;
   } catch {
     return fallback;
   }
@@ -88,13 +89,13 @@ function storedZoomPercent(key: string, fallback: number): number {
 
 /** Zoom de l'éditeur mémorisé (en %), 100 hors plage ou hors navigateur. */
 export function storedEditorZoomPercent(): number {
-  return storedZoomPercent("zedsuite-editor-zoom", 100);
+  return storedZoomPercent("breizhreprog-editor-zoom", 100, "zedsuite-editor-zoom");
 }
 
 /** Zoom du dashboard mémorisé (en %), 90 par défaut — la valeur que l'écran
  *  a toujours eue, réglable depuis sa barre de titre depuis la 1.1.9. */
 export function storedDashboardZoomPercent(): number {
-  return storedZoomPercent("zedsuite-dashboard-zoom", DASHBOARD_DEFAULT_ZOOM_PERCENT);
+  return storedZoomPercent("breizhreprog-dashboard-zoom", DASHBOARD_DEFAULT_ZOOM_PERCENT, "zedsuite-dashboard-zoom");
 }
 
 /** Largeur logique minimale de la fenêtre telle que l'éditeur la demande

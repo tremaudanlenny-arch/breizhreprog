@@ -544,6 +544,10 @@ interface MapViewerProps {
     mapValues: number[][];
     xAxisLabels: string[];
     yAxisLabels: string[];
+    sourceMapValues?: number[][];
+    sourceXAxisLabels?: string[];
+    sourceYAxisLabels?: string[];
+    isAtdcVirtual?: boolean;
     xAxisLabel: string;
     yAxisLabel: string;
     mapName: string;
@@ -3371,7 +3375,33 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
           row.map((durationValue, c) => {
             const x = Number.parseFloat(String(durationX[c] ?? ""));
             const y = Number.parseFloat(String(durationY[r] ?? ""));
-            const soiValue = sample2d(soiValues, soiX, soiY, x, y);
+            let soiValue: number | null = null;
+
+            // Prefer the live SOI snapshot when that map is open/edited.
+            if (soiValues?.length && soiX.length && soiY.length) {
+              soiValue = sample2d(soiValues, soiX, soiY, x, y);
+            }
+
+            // Fallback: read the actual SOI map directly from the binary.
+            // Duration edits remain live even when the SOI map is not open.
+            if (soiValue == null && atdcSoiMap && soiLayout) {
+              const sourceRows = durationValues.length;
+              const sourceCols = durationValues[0]?.length ?? 0;
+              const soiRow = sourceRows > 1 && soiLayout.rows > 1
+                ? Math.round(r * (soiLayout.rows - 1) / (sourceRows - 1))
+                : 0;
+              const soiCol = sourceCols > 1 && soiLayout.cols > 1
+                ? Math.round(c * (soiLayout.cols - 1) / (sourceCols - 1))
+                : 0;
+              soiValue = readCorrectedSourceCell(
+                atdcSoiMap as typeof mapData,
+                atdcSoiMap.address,
+                soiRow,
+                soiCol,
+                soiLayout,
+              );
+            }
+
             return Number.isFinite(soiValue) ? Number(durationValue) - Number(soiValue) : Number(durationValue);
           }),
         );

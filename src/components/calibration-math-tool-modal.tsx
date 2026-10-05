@@ -17,6 +17,7 @@ type DurationMap = {
 
 type Snapshot = {
   mapValues: number[][];
+  sourceMapValues?: number[][];
   sourceXAxisLabels?: string[];
   sourceYAxisLabels?: string[];
   xAxisLabels: string[];

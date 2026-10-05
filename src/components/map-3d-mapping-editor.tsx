@@ -69,6 +69,7 @@ function MappingPoint({
   position: [number, number, number];
   decimals: number;
   onSelect: (cell: { row: number; col: number }) => void;
+  onToggleSelection: (cell: { row: number; col: number }, additive: boolean) => void;
   onStartDrag: (event: ThreeEvent<PointerEvent>, cell: { row: number; col: number }) => void;
   onHover: () => void;
   onLeave: () => void;
@@ -87,13 +88,7 @@ function MappingPoint({
           event.stopPropagation();
           event.nativeEvent.preventDefault();
           onSelect({ row, col });
-          setSelectedCells((previous) => {
-            const next = new Set(event.shiftKey ? previous : []);
-            const key = `${row}-${col}`;
-            if (event.shiftKey && next.has(key)) next.delete(key);
-            else next.add(key);
-            return next;
-          });
+          onToggleSelection({ row, col }, event.shiftKey);
           onStartDrag(event, { row, col });
         }}
         onPointerOver={(event) => {
@@ -498,6 +493,15 @@ export function Map3DMappingEditor({
               position={cell.position}
               decimals={decimals}
               onSelect={onSelectCell}
+              onToggleSelection={(cell, additive) => {
+                setSelectedCells((previous) => {
+                  const next = new Set(additive ? previous : []);
+                  const key = `${cell.row}-${cell.col}`;
+                  if (additive && next.has(key)) next.delete(key);
+                  else next.add(key);
+                  return next;
+                });
+              }}
               onStartDrag={startDrag}
               onHover={() => {
                 if (!draggingRef.current) document.body.style.cursor = "grab";

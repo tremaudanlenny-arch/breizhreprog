@@ -286,7 +286,7 @@ async fn fetch_roadmap_online(lang: &str) -> Result<String, String> {
     let url = format!("{ROADMAP_RAW_BASE}{}", roadmap_file_name(lang));
     let res = client
         .get(&url)
-        .header("User-Agent", "ZedSuite")
+        .header("User-Agent", "BreizhReprog-Updater")
         .send()
         .await
         .map_err(|e| format!("network: {e}"))?

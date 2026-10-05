@@ -30,7 +30,7 @@ type ViewMode = "text" | "2d" | "3d";
 
 // Cache pour mémoriser les données extraites de chaque map (par adresse)
 // Ce cache évite de recalculer les données à chaque changement de map
-const CACHE_VERSION = "2026-10-breizhreprog-atdc-v2-normalized-soi";
+const CACHE_VERSION = "2026-10-breizhreprog-atdc-v3-physical-axes";
 
 // Map globale pour sauvegarder les positions de caméra de chaque map 3D
 // Persiste entre les montages/démontages du composant
@@ -3373,13 +3373,41 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         const durationCols = durationValues[0].length;
         const liveAtdc = durationValues.map((row, r) =>
           row.map((durationValue, c) => {
-            const x = Number.parseFloat(String(durationX[c] ?? ""));
-            const y = Number.parseFloat(String(durationY[r] ?? ""));
+            const rawX = Number.parseFloat(String(durationX[c] ?? ""));
+            const rawY = Number.parseFloat(String(durationY[r] ?? ""));
             let soiValue: number | null = null;
 
-            // Prefer the live SOI snapshot when that map is open/edited.
+            // Duration 00 and SOI maps do not necessarily store the physical
+            // axes in the same orientation. In the screenshotmed EDC15 case:
+            // Duration = X RPM / Y IQ, while SOI = X IQ / Y RPM.
+            // Resolve RPM/IQ first, then query SOI using its own axis order.
+            const axisKind = (labels: string[]) => {
+              const text = labels.join(" ").toLowerCase();
+              if (text.includes("rpm") || text.includes("engine speed")) return "rpm";
+              if (text.includes("iq") || text.includes("mg/st") || text.includes("mg/stroke")) return "iq";
+              return "other";
+            };
+            const durationXKind = axisKind(durationX);
+            const durationYKind = axisKind(durationY);
+            const rpmValue =
+              durationXKind === "rpm" ? rawX :
+              durationYKind === "rpm" ? rawY : rawX;
+            const iqValue =
+              durationXKind === "iq" ? rawX :
+              durationYKind === "iq" ? rawY : rawY;
+
             if (soiValues?.length && soiX.length && soiY.length) {
-              soiValue = sample2d(soiValues, soiX, soiY, x, y);
+              const soiXKind = axisKind(soiX);
+              const soiYKind = axisKind(soiY);
+              const soiQueryX =
+                soiXKind === "rpm" ? rpmValue :
+                soiXKind === "iq" ? iqValue :
+                rpmValue;
+              const soiQueryY =
+                soiYKind === "rpm" ? rpmValue :
+                soiYKind === "iq" ? iqValue :
+                iqValue;
+              soiValue = sample2d(soiValues, soiX, soiY, soiQueryX, soiQueryY);
             }
 
             // Fallback: read the actual SOI map directly from the binary.

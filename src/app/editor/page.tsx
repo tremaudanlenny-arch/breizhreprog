@@ -6247,6 +6247,22 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   }, []);
   const openAtdcTool = () => {
     setToolsMenuOpen(false);
+    // Pré-sélectionner automatiquement une Duration et le premier SOI disponible.
+    // Ainsi l'outil ATDC est immédiatement utilisable dès que les maps existent.
+    if (!atdcSelectedSource && atdcSourceMaps.length > 0) {
+      setAtdcSelectedSource(atdcSourceMaps[0]);
+    }
+    if (atdcSoiMaps.length > 0) {
+      const preferred = atdcSoiMaps.find((m) =>
+        /start\s+of\s+injection\s+90(?:°C?|\s|$)/i.test(m.name || "")
+      );
+      if (preferred) setAtdcToolSoi(90);
+      else {
+        const first = atdcSoiMaps[0]?.name || "";
+        const match = first.match(/start\s+of\s+injection\s+(90|80|70|60|50)/i);
+        if (match) setAtdcToolSoi(Number(match[1]));
+      }
+    }
     setAtdcToolOpen(true);
   };
 
@@ -7218,14 +7234,29 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               macOS cela le garde aussi à droite des feux de la fenêtre, à
               tous les zooms. */}
           <div data-tauri-drag-region className="mb-4 flex items-center justify-center">
-            <div data-tauri-drag-region className="relative inline-flex flex-col items-center gap-1">
+            <div data-tauri-drag-region className="relative inline-flex flex-col items-center gap-1 px-5 py-3 rounded-2xl overflow-visible">
+              <div
+                data-tauri-drag-region
+                className="absolute -inset-3 rounded-3xl bg-gradient-to-r from-violet-600/30 via-fuchsia-500/25 to-cyan-400/25 blur-2xl animate-pulse"
+              />
+              <div
+                data-tauri-drag-region
+                className="absolute -inset-1 rounded-2xl border border-violet-400/30"
+                style={{ boxShadow: "0 0 18px rgba(139,92,246,0.32), 0 0 42px rgba(217,70,239,0.18)" }}
+              />
               <img
                 src="/breizh-reprog-logo.svg"
                 alt="Breizh Reprog X Ninnin Projet Perf"
                 data-tauri-drag-region
-                className="h-10 w-auto max-w-[210px] object-contain"
+                className="relative h-16 w-auto max-w-[280px] object-contain drop-shadow-[0_0_18px_rgba(168,85,247,0.85)] transition-transform duration-500 hover:scale-[1.04]"
               />
-              <span className="text-[11px] font-semibold tracking-wide" style={{ color: theme === 'light' ? 'rgba(0,0,0,0.72)' : 'rgba(255,255,255,0.82)' }}>
+              <span
+                className="relative text-[11px] font-black tracking-[0.18em] uppercase"
+                style={{
+                  color: theme === 'light' ? 'rgba(0,0,0,0.72)' : '#f5eaff',
+                  textShadow: theme === 'light' ? 'none' : '0 0 10px rgba(192,132,252,0.8)'
+                }}
+              >
                 Breizh Reprog X Ninnin Projet Perf
               </span>
             </div>
@@ -7707,7 +7738,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               open={shortcutHelpOpen}
               onClose={() => setShortcutHelpOpen(false)}
               theme={theme}
-              version="1.16.1"
+              version="1.16.2"
             />
 
             <SettingsMenu

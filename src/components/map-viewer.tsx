@@ -1802,37 +1802,6 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
   };
 
 
-  const plot3DRenderData = useMemo(() => {
-    if (!mapping3DMode || !selected3DCell) return plot3DData;
-    const needsYReverse =
-      displayYAxisLabels.length > 0 &&
-      parseFloat(displayYAxisLabels[0]) > parseFloat(displayYAxisLabels[displayYAxisLabels.length - 1]);
-    const plotRow = needsYReverse
-      ? displayMapValues.length - 1 - selected3DCell.row
-      : selected3DCell.row;
-    const plotCol = selected3DCell.col;
-    const value = displayMapValues[selected3DCell.row]?.[plotCol];
-    if (value === undefined) return plot3DData;
-
-    return [
-      ...plot3DData,
-      {
-        x: [plotCol],
-        y: [plotRow],
-        z: [value],
-        type: "scatter3d" as const,
-        mode: "markers" as const,
-        marker: {
-          size: 7,
-          color: "#ffffff",
-          line: { color: "#7c3aed", width: 3 },
-        },
-        hovertemplate: "Cellule sélectionnée<br>Valeur: %{z:.2f}<extra></extra>",
-        showlegend: false,
-      },
-    ];
-  }, [plot3DData, mapping3DMode, selected3DCell, displayYAxisLabels, displayMapValues]);
-
   // Zoom programmatique (boutons +/− de l'EasyView) : on rapproche ou on
   // éloigne l'œil du centre de la scène, à partir de la DERNIÈRE position
   // utilisateur (savedCameraPositions, mise à jour à chaque rotation). Le
@@ -4223,6 +4192,40 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         : []),
     ];
   }, [displayMapValues, displayXAxisLabels, displayYAxisLabels, theme, disableGraphColors]);
+
+  // IMPORTANT: plot3DData doit être initialisé avant que ce dérivé ne soit évalué.
+  // Le mettre plus haut évite une Temporal Dead Zone après compilation/minification
+  // (le bundle transformait le nom en « aj » et faisait planter tout MapViewer).
+  const plot3DRenderData = useMemo(() => {
+    if (!mapping3DMode || !selected3DCell) return plot3DData;
+    const needsYReverse =
+      displayYAxisLabels.length > 0 &&
+      parseFloat(displayYAxisLabels[0]) > parseFloat(displayYAxisLabels[displayYAxisLabels.length - 1]);
+    const plotRow = needsYReverse
+      ? displayMapValues.length - 1 - selected3DCell.row
+      : selected3DCell.row;
+    const plotCol = selected3DCell.col;
+    const value = displayMapValues[selected3DCell.row]?.[plotCol];
+    if (value === undefined) return plot3DData;
+
+    return [
+      ...plot3DData,
+      {
+        x: [plotCol],
+        y: [plotRow],
+        z: [value],
+        type: "scatter3d" as const,
+        mode: "markers" as const,
+        marker: {
+          size: 7,
+          color: "#ffffff",
+          line: { color: "#7c3aed", width: 3 },
+        },
+        hovertemplate: "Cellule sélectionnée<br>Valeur: %{z:.2f}<extra></extra>",
+        showlegend: false,
+      },
+    ];
+  }, [plot3DData, mapping3DMode, selected3DCell, displayYAxisLabels, displayMapValues]);
 
 
   // Étiquettes d'axes (indices → vraies valeurs) pour les deux layouts 3D

@@ -17,6 +17,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: breizhreprog-windows-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   NODE_VERSION: 20
 

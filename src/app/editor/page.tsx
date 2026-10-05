@@ -6407,6 +6407,19 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     );
   }, [projectData?.detectionResults?.maps]);
 
+  // Source maps utilisées par ATDC / Injection. Elles sont montées dans un
+  // moteur invisible dédié : l'utilisateur n'a PAS besoin d'ouvrir une
+  // fenêtre Duration/SOI. MapViewer publie ainsi ses valeurs canoniques et
+  // ses axes vers mapPlot3DDataRef même quand la map est fermée.
+  const liveCalibrationMaps = useMemo(() => {
+    const seen = new Set<number>();
+    return [...atdcSourceMaps, ...atdcSoiMaps].filter((map) => {
+      if (seen.has(map.address)) return false;
+      seen.add(map.address);
+      return true;
+    });
+  }, [atdcSourceMaps, atdcSoiMaps]);
+
   const renderToolsMenu = (placement: 'below' | 'side') => (
     <div
       ref={toolsMenuRef}
@@ -6448,15 +6461,8 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         type="button"
         onClick={() => {
           setToolsMenuOpen(false);
-          const duration = atdcSourceMaps[0];
-          const soi = atdcSoiMaps.find((m) =>
-            /start\s+of\s+injection\s+90(?:°C?|\s|$)/i.test(m.name || "")
-          ) || atdcSoiMaps[0];
-          // The calculator consumes the same live snapshots as the editor.
-          // Open the default source maps automatically so the tool is usable
-          // immediately instead of showing an empty calculator.
-          if (duration) handleMapClick(duration);
-          if (soi) handleMapClick(soi);
+          // The source maps are maintained by the invisible calibration
+          // engine below. No Duration/SOI window needs to be opened.
           setInjectionCalculatorOpen(true);
         }}
         className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
@@ -8522,7 +8528,81 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                 </div>
               )}
 
+              {/* Moteur invisible des maps Duration/SOI : alimente ATDC et
+                  Calculateur Injection sans ouvrir de fenêtre utilisateur. */}
+              <div
+                aria-hidden="true"
+                style={{
+                  position: "absolute",
+                  left: -10000,
+                  top: 0,
+                  width: 2,
+                  height: 2,
+                  overflow: "hidden",
+                  pointerEvents: "none",
+                  opacity: 0,
+                }}
+              >
+                {liveCalibrationMaps.map((liveMap) => {
+                  const liveMapModifications = allMapModifications.get(liveMap.address);
+                  const livePersistedAxes = mapAxisLabels.get(liveMap.address);
+                  const liveSettings = mapDisplaySettingsStore.get(liveMap.address);
+                  const visibleAlready = openMaps.some((open) => open.address === liveMap.address);
 
+                  // Une fenêtre visible possède déjà son propre moteur live.
+                  // Le moteur invisible ne double donc pas les snapshots ouverts.
+                  if (visibleAlready) return null;
+
+                  return (
+                    <div key={`live-calibration-${liveMap.address}`} style={{ width: 2, height: 2 }}>
+                      <MapViewer
+                        key={`live-calibration-viewer-${liveMap.address}`}
+                        mapData={liveMap}
+                        fileData={projectData.file_data}
+                        projectName={projectData.project_name}
+                        fileName={projectData.file_name}
+                        viewMode="text"
+                        easyViewMode={false}
+                        userSized={true}
+                        initialChangedCells={liveMapModifications}
+                        initialXAxisLabels={livePersistedAxes?.x}
+                        initialYAxisLabels={livePersistedAxes?.y}
+                        theme={theme}
+                        onPlot3DDataChange={handlePlot3DDataChange}
+                        liveMapSnapshots={mapPlot3DDataRef.current}
+                        liveSnapshotVersion={mapSnapshotVersion}
+                        allMaps={projectData.detectionResults.maps}
+                        displaySettings={(() => {
+                          if (!liveSettings) return undefined;
+                          const defaults = getDefaultMapDisplaySettings(liveMap);
+                          const axisOverride = (
+                            saved: MapDisplaySettings['xAxis'],
+                            def: MapDisplaySettings['xAxis']
+                          ) => ({
+                            mirror: saved.mirror,
+                            factor: saved.factor !== def.factor ? saved.factor : undefined,
+                            offset: saved.offset !== def.offset ? saved.offset : undefined,
+                            divisor: saved.divisor !== def.divisor ? saved.divisor : undefined,
+                            precision: saved.precision !== def.precision ? saved.precision : undefined,
+                          });
+                          return {
+                            xAxis: axisOverride(liveSettings.xAxis, defaults.xAxis),
+                            yAxis: axisOverride(liveSettings.yAxis, defaults.yAxis),
+                            map: {
+                              factor: liveSettings.factor,
+                              offset: liveSettings.offset,
+                              divisor: liveSettings.divisor,
+                              precision: liveSettings.precision,
+                              invertDisplay: liveSettings.invertDisplay,
+                            },
+                          };
+                        })()}
+                        ecuType={projectData?.ecu_type}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
 
               {/* Fenêtre de puissance — flottante, dans le même container              {/* Fenêtre de puissance — flottante, dans le même container
                   que les maps, calculée sur l'état en mémoire de la version */}
@@ -8631,10 +8711,6 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
             };
 
             setAtdcToolOpen(false);
-
-            // Keep the Duration source visibly open so its edited values feed
-            // the live ATDC snapshot stream immediately.
-            handleMapClick(source);
 
             setOpenMaps((prev) => {
               const withoutExisting = prev.filter((m) => m.address !== virtualMap.address);

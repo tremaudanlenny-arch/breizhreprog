@@ -34,6 +34,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm install
 
+      - name: Generate Breizh Reprog icons
+        run: npm run tauri icon public/breizh-reprog-logo.svg -o src-tauri/icons
+
       - name: Build and publish Windows installer
         uses: tauri-apps/tauri-action@v1
         env:

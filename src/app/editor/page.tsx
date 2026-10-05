@@ -2357,6 +2357,8 @@ function EditorPageContent() {
 
   // State pour forcer le re-render du Preview quand les données changent
   const [previewDataVersion, setPreviewDataVersion] = useState(0);
+  // Version globale des snapshots de maps utilisées par la vue ATDC live.
+  const [mapSnapshotVersion, setMapSnapshotVersion] = useState(0);
 
   // Curseur global - map/hexdump active et infos de sélection
   const [activeMapAddress, setActiveMapAddress] = useState<number | null>(null);
@@ -6722,6 +6724,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     canShow3D: boolean;
   }) => {
     mapPlot3DDataRef.current.set(mapAddress, data);
+    setMapSnapshotVersion((version) => version + 1);
     if (activeMapAddressRef.current === mapAddress && showPreviewWindowRef.current) {
       setPreviewDataVersion(prev => prev + 1);
     }
@@ -8345,6 +8348,8 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                             theme={theme}
                             onSelectionChange={(info) => handleMapSelectionChange(map.address, info)}
                             onPlot3DDataChange={handlePlot3DDataChange}
+                            liveMapSnapshots={mapPlot3DDataRef.current}
+                            liveSnapshotVersion={mapSnapshotVersion}
                             onOpenProperties={() => handleOpenMapProperties(map)}
                             disableTableColors={settings.disableTableColors}
                             disableGraphColors={settings.disableGraphColors}

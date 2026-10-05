@@ -3984,7 +3984,10 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
             ? (col - startC) / Math.max(1, endC - startC)
             : (row - startR) / Math.max(1, endR - startR);
           const value = clampValue(Math.round(startValue + (endValue - startValue) * position));
-          if (Math.abs(value - (original[row]?.[col] ?? value)) > 1e-6) changes.set(row + '-' + col, value);
+          if (Math.abs(value - (original[row]?.[col] ?? value)) > 1e-6) {
+            working[row][col] = value;
+            changes.set(row + '-' + col, value);
+          }
         }
       }
     } else {

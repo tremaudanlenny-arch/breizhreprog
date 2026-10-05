@@ -27,7 +27,7 @@ import {
 import { useI18n } from "@/contexts/i18n-context";
 import { useSettings } from "@/contexts/settings-context";
 import { DashboardBackground, useDashboardWallpaper } from "@/components/dashboard-background";
-import { openExternal, ZEDSUITE_REPO_URL, ZEDSUITE_RELEASES_URL } from "@/lib/open-external";
+import { openExternal, BREIZH_REPROG_REPO_URL, BREIZH_REPROG_RELEASES_URL } from "@/lib/open-external";
 import { RoadmapModal } from "@/components/roadmap-modal";
 import { formatBytes } from "@/lib/format-bytes";
 import packageJson from "../../../package.json";
@@ -1343,13 +1343,13 @@ function DashboardContent() {
               {/* Liste complète des mises à jour, avec le détail de chacune (sur demande) */}
               <p className={`text-sm mt-2 ${theme === "light" ? "text-slate-600" : "text-white/60"}`}>
                 {t.updateDialog.allReleases}{" "}
-                <button type="button" onClick={() => void openExternal(ZEDSUITE_RELEASES_URL)} className={`underline underline-offset-2 ${theme === "light" ? "text-slate-800 hover:text-black" : "text-white/80 hover:text-white"}`}>github.com/tremaudanlenny-arch/breizhreprog/releases</button>
+                <button type="button" onClick={() => void openExternal(BREIZH_REPROG_RELEASES_URL)} className={`underline underline-offset-2 ${theme === "light" ? "text-slate-800 hover:text-black" : "text-white/80 hover:text-white"}`}>github.com/tremaudanlenny-arch/breizhreprog/releases</button>
               </p>
             </div>
             <div className={`text-sm mb-5 ${theme === "light" ? "text-slate-600" : "text-white/60"}`}>
               <p className={`font-semibold mb-1 ${theme === "light" ? "text-slate-900" : "text-white"}`}>{t.appInfo.feedbackTitle}</p>
               <p>{t.appInfo.feedbackText}</p>
-              <p className="mt-1.5">Source code: <button type="button" onClick={() => void openExternal(ZEDSUITE_REPO_URL)} className={`underline underline-offset-2 ${theme === "light" ? "text-slate-800 hover:text-black" : "text-white/80 hover:text-white"}`}>github.com/tremaudanlenny-arch/breizhreprog</button></p>
+              <p className="mt-1.5">Source code: <button type="button" onClick={() => void openExternal(BREIZH_REPROG_REPO_URL)} className={`underline underline-offset-2 ${theme === "light" ? "text-slate-800 hover:text-black" : "text-white/80 hover:text-white"}`}>github.com/tremaudanlenny-arch/breizhreprog</button></p>
             </div>
             <div className="relative flex justify-end items-center">
               {/* Logo ZedPerf centré en bas — noir/rouge en clair, blanc/rouge en sombre */}

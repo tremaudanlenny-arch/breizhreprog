@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Calculator, Check, X, Zap } from "lucide-react";
+import { Calculator, X, Zap } from "lucide-react";
 
 export interface InjectionMapDefinition {
   name: string;

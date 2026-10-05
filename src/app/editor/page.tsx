@@ -2384,6 +2384,7 @@ function EditorPageContent() {
     sourceXAxisLabels: string[];
     sourceYAxisLabels: string[];
     sourceMapValues: number[][];
+    isAtdcVirtual?: boolean;
     xAxisLabel: string;
     yAxisLabel: string;
     mapName: string;
@@ -6823,7 +6824,11 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     canShow3D: boolean;
   }) => {
     mapPlot3DDataRef.current.set(mapAddress, data);
-    setMapSnapshotVersion((version) => version + 1);
+    // Une carte ATDC est une vue dérivée : elle ne doit pas incrémenter sa
+    // propre révision live, sinon elle se republie elle-même en boucle.
+    if (!data.isAtdcVirtual) {
+      setMapSnapshotVersion((version) => version + 1);
+    }
     if (activeMapAddressRef.current === mapAddress && showPreviewWindowRef.current) {
       setPreviewDataVersion(prev => prev + 1);
     }

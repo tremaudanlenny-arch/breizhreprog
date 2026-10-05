@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { X, Repeat2 } from "lucide-react";
+import { X, Repeat2, SlidersHorizontal } from "lucide-react";
 import axios from "axios";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/theme-context";
@@ -222,9 +222,22 @@ const getCacheKey = (address: number, projectName?: string, fileName?: string): 
 
 // Fonction pour calculer la couleur du dégradé en fonction de la valeur
 // Utilise le même dégradé que la vue 3D : bleu -> vert -> jaune -> orange -> rouge
-const getValueColor = (value: number, min: number, max: number, theme: "default" | "light" | "oled" = "default"): string => {
+const getValueColor = (
+  value: number,
+  min: number,
+  max: number,
+  theme: "default" | "light" | "oled" = "default",
+  options?: { threshold?: number; saturation?: number; contrast?: number }
+): string => {
   // Normaliser la valeur entre 0 et 1 (si map à plat, utiliser 1 pour obtenir le rouge)
-  const normalized = max === min ? 1 : (value - min) / (max - min);
+  const baseNormalized = max === min ? 1 : (value - min) / (max - min);
+  const threshold = Math.max(0, Math.min(0.95, options?.threshold ?? 0));
+  const contrast = Math.max(0.5, Math.min(2, options?.contrast ?? 1));
+  const saturation = Math.max(0.5, Math.min(2.5, options?.saturation ?? 1));
+  const thresholded = threshold > 0
+    ? Math.max(0, (baseNormalized - threshold) / (1 - threshold))
+    : baseNormalized;
+  const normalized = Math.max(0, Math.min(1, ((thresholded - 0.5) * contrast) + 0.5));
 
   // Dégradé de couleurs : bleu (0) -> vert (0.25) -> jaune (0.5) -> orange (0.75) -> rouge (1)
   const colorStops = [
@@ -251,7 +264,16 @@ const getValueColor = (value: number, min: number, max: number, theme: "default"
   const localNormalized = (normalized - lowerStop.pos) / (upperStop.pos - lowerStop.pos);
   const r = Math.round(lowerStop.color[0] + (upperStop.color[0] - lowerStop.color[0]) * localNormalized);
   const g = Math.round(lowerStop.color[1] + (upperStop.color[1] - lowerStop.color[1]) * localNormalized);
-  const b = Math.round(lowerStop.color[2] + (upperStop.color[2] - lowerStop.color[2]) * localNormalized);
+  let b = Math.round(lowerStop.color[2] + (upperStop.color[2] - lowerStop.color[2]) * localNormalized);
+
+  // Réglages de rendu couleur (affichage uniquement).
+  if (saturation !== 1) {
+    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const sat = (channel: number) => Math.max(0, Math.min(255, luminance + (channel - luminance) * saturation));
+    r = Math.round(sat(r));
+    g = Math.round(sat(g));
+    b = Math.round(sat(b));
+  }
 
   // Ajuster les couleurs selon le thème
   let finalR, finalG, finalB;
@@ -616,6 +638,10 @@ export function MapViewer({
   const { t } = useI18n();
   const isAtdcVirtual = mapData.map_type === "atdc_virtual";
   const atdcSoi = mapData.atdc_soi_default ?? 90;
+  const [atdcRenderOpen, setAtdcRenderOpen] = useState(false);
+  const [atdcThreshold, setAtdcThreshold] = useState(0);
+  const [atdcSaturation, setAtdcSaturation] = useState(1);
+  const [atdcContrast, setAtdcContrast] = useState(1);
 
   // Active value-edit prompt (cell / X axis / Y axis). null = closed. The
   // themed PromptModal replaces the native window.prompt() so it matches the
@@ -4605,7 +4631,17 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
                               const mapCoords = toMapCoords(rowIndex, colIndex);
                               const cellKey = getCellKey(mapCoords.row, mapCoords.col);
                               const isSelected = selectedCells.has(cellKey);
-                              const bgColor = isSelected ? getSelectionBg() : (disableTableColors ? 'transparent' : getValueColor(value, minValue, maxValue, theme));
+                              const bgColor = isSelected ? getSelectionBg() : (disableTableColors ? 'transparent' : getValueColor(
+                                value,
+                                minValue,
+                                maxValue,
+                                theme,
+                                isAtdcVirtual ? {
+                                  threshold: atdcThreshold,
+                                  saturation: atdcSaturation,
+                                  contrast: atdcContrast,
+                                } : undefined
+                              ));
                               return (
                                 <td
                                   key={colIndex}
@@ -5171,7 +5207,17 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
                         const mapCoords = toMapCoords(rowIndex, colIndex);
                         const cellKey = getCellKey(mapCoords.row, mapCoords.col);
                         const isSelected = selectedCells.has(cellKey);
-                        const bgColor = isSelected ? getSelectionBg() : (disableTableColors ? 'transparent' : getValueColor(value, minValue, maxValue, theme));
+                        const bgColor = isSelected ? getSelectionBg() : (disableTableColors ? 'transparent' : getValueColor(
+                                value,
+                                minValue,
+                                maxValue,
+                                theme,
+                                isAtdcVirtual ? {
+                                  threshold: atdcThreshold,
+                                  saturation: atdcSaturation,
+                                  contrast: atdcContrast,
+                                } : undefined
+                              ));
 
                         return (
                           <td

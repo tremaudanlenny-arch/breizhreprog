@@ -35,13 +35,32 @@ interface Props {
   initialTargetAtdc?: number;
   onApply: (result: InjectionApplyResult) => void;
   onClose: () => void;
+  snapshotVersion?: number;
 }
 
-type AxisMode = "x" | "y";
+type AxisMode = "auto" | "x" | "y";
 type Direction = "duration-to-soi" | "soi-to-duration";
 
 const parseAxis = (labels: string[]) =>
   labels.map((label) => Number(String(label).replace(",", ".")));
+
+function inferIqAxis(snapshot: InjectionMapSnapshot): "x" | "y" {
+  const xText = [snapshot.xAxisLabel, ...(snapshot.sourceXAxisLabels ?? [])].join(" ").toLowerCase();
+  const yText = [snapshot.yAxisLabel, ...(snapshot.sourceYAxisLabels ?? [])].join(" ").toLowerCase();
+  const iqPattern = /\biq\b|mg\s*\/\s*(?:st|stroke|cp)|mg\/st|quantity|quantit[ée]|injection quantity|fuel quantity|dose/;
+  const rpmPattern = /rpm|engine speed|regime|tr\/min|tour/i;
+  if (iqPattern.test(xText) && !iqPattern.test(yText)) return "x";
+  if (iqPattern.test(yText) && !iqPattern.test(xText)) return "y";
+  if (rpmPattern.test(xText) && !rpmPattern.test(yText)) return "y";
+  if (rpmPattern.test(yText) && !rpmPattern.test(xText)) return "x";
+  const x = parseAxis(snapshot.sourceXAxisLabels ?? snapshot.xAxisLabels).filter(Number.isFinite);
+  const y = parseAxis(snapshot.sourceYAxisLabels ?? snapshot.yAxisLabels).filter(Number.isFinite);
+  const xMax = x.length ? Math.max(...x.map(Math.abs)) : Infinity;
+  const yMax = y.length ? Math.max(...y.map(Math.abs)) : Infinity;
+  if (Number.isFinite(xMax) && Number.isFinite(yMax) && xMax <= 200 && yMax > 200) return "x";
+  if (Number.isFinite(xMax) && Number.isFinite(yMax) && yMax <= 200 && xMax > 200) return "y";
+  return "x";
+}
 
 function nearestOrBracket(values: number[], target: number) {
   const valid = values.map((value, index) => ({ value, index })).filter((x) => Number.isFinite(x.value));
@@ -120,6 +139,7 @@ export function InjectionCalculatorModal({
   soiMaps,
   snapshots,
   initialTargetIq = 85,
+  snapshotVersion = 0,
   initialTargetAtdc = 9,
   onApply,
   onClose,
@@ -132,7 +152,7 @@ export function InjectionCalculatorModal({
 
   const [targetIqText, setTargetIqText] = useState(String(initialTargetIq));
   const [targetAtdcText, setTargetAtdcText] = useState(String(initialTargetAtdc));
-  const [axisMode, setAxisMode] = useState<AxisMode>("x");
+  const [axisMode, setAxisMode] = useState<AxisMode>("auto");
   const [direction, setDirection] = useState<Direction>("duration-to-soi");
   const [adjustAxis, setAdjustAxis] = useState(true);
   const [durationAddress, setDurationAddress] = useState(durationMaps[0]?.address ?? 0);
@@ -149,15 +169,19 @@ export function InjectionCalculatorModal({
 
     const durationValues = durationSnapshot.sourceMapValues ?? durationSnapshot.mapValues;
     const soiValues = soiSnapshot.sourceMapValues ?? soiSnapshot.mapValues;
+
+    const durationMode = axisMode === "auto" ? inferIqAxis(durationSnapshot) : axisMode;
+    const soiMode = axisMode === "auto" ? inferIqAxis(soiSnapshot) : axisMode;
+
     const durationXAxis = parseAxis(durationSnapshot.sourceXAxisLabels ?? durationSnapshot.xAxisLabels);
     const durationYAxis = parseAxis(durationSnapshot.sourceYAxisLabels ?? durationSnapshot.yAxisLabels);
     const soiXAxis = parseAxis(soiSnapshot.sourceXAxisLabels ?? soiSnapshot.xAxisLabels);
     const soiYAxis = parseAxis(soiSnapshot.sourceYAxisLabels ?? soiSnapshot.yAxisLabels);
 
-    const durationIqAxis = axisMode === "x" ? durationXAxis : durationYAxis;
-    const soiIqAxis = axisMode === "x" ? soiXAxis : soiYAxis;
-    const durationOtherAxis = axisMode === "x" ? durationYAxis : durationXAxis;
-    const soiOtherAxis = axisMode === "x" ? soiYAxis : soiXAxis;
+    const durationIqAxis = durationMode === "x" ? durationXAxis : durationYAxis;
+    const soiIqAxis = soiMode === "x" ? soiXAxis : soiYAxis;
+    const durationOtherAxis = durationMode === "x" ? durationYAxis : durationXAxis;
+    const soiOtherAxis = soiMode === "x" ? soiYAxis : soiXAxis;
 
     const durationInfo = nearestOrBracket(durationIqAxis, targetIq);
     const soiInfo = nearestOrBracket(soiIqAxis, targetIq);
@@ -171,11 +195,8 @@ export function InjectionCalculatorModal({
       && targetIq <= Math.max(...finiteSoiAxis);
     const targetInRange = durationInRange && soiInRange;
 
-    const seriesAtTarget = (
-      values: number[][],
-      info: { lower: number; upper: number; t: number },
-    ): number[] => {
-      if (axisMode === "x") {
+    const seriesAtTarget = (values, info, mode) => {
+      if (mode === "x") {
         return values.map((row) => {
           const a = row[info.lower];
           const b = row[info.upper];
@@ -184,7 +205,7 @@ export function InjectionCalculatorModal({
         });
       }
       const cols = values[0]?.length ?? 0;
-      const result: number[] = [];
+      const result = [];
       for (let col = 0; col < cols; col++) {
         const a = values[info.lower]?.[col];
         const b = values[info.upper]?.[col];
@@ -194,11 +215,7 @@ export function InjectionCalculatorModal({
       return result;
     };
 
-    const resampleSeries = (
-      sourceAxis: number[],
-      sourceValues: number[],
-      targetAxis: number[],
-    ): number[] => {
+    const resampleSeries = (sourceAxis, sourceValues, targetAxis) => {
       return targetAxis.map((target) => {
         const info = nearestOrBracket(sourceAxis, target);
         if (!sourceValues.length) return NaN;
@@ -209,27 +226,19 @@ export function InjectionCalculatorModal({
       });
     };
 
-    const durationAtIq = seriesAtTarget(durationValues, durationInfo);
-    const soiAtIq = seriesAtTarget(soiValues, soiInfo);
+    const durationAtIq = seriesAtTarget(durationValues, durationInfo, durationMode);
+    const soiAtIq = seriesAtTarget(soiValues, soiInfo, soiMode);
 
-    let durationSeries: number[];
-    let soiSeries: number[];
+    let durationSeries;
+    let soiSeries;
 
     if (direction === "duration-to-soi") {
       durationSeries = durationAtIq.map((v) => Number(v.toFixed(2)));
-      const soiFromDuration = resampleSeries(
-        durationOtherAxis,
-        durationSeries,
-        soiOtherAxis,
-      );
+      const soiFromDuration = resampleSeries(durationOtherAxis, durationSeries, soiOtherAxis);
       soiSeries = soiFromDuration.map((v) => Number((v - targetAtdc).toFixed(2)));
     } else {
       soiSeries = soiAtIq.map((v) => Number(v.toFixed(2)));
-      const durationFromSoi = resampleSeries(
-        soiOtherAxis,
-        soiSeries,
-        durationOtherAxis,
-      );
+      const durationFromSoi = resampleSeries(soiOtherAxis, soiSeries, durationOtherAxis);
       durationSeries = durationFromSoi.map((v) => Number((v + targetAtdc).toFixed(2)));
     }
 
@@ -238,49 +247,37 @@ export function InjectionCalculatorModal({
     const soiAxisLabelsRaw = soiSnapshot.sourceXAxisLabels ?? soiSnapshot.xAxisLabels;
     const soiYAxisLabelsRaw = soiSnapshot.sourceYAxisLabels ?? soiSnapshot.yAxisLabels;
 
-    const nextDurationXAxis = adjustAxis && axisMode === "x"
-      ? replaceAxisValue(durationAxisLabelsRaw, targetIq)
-      : durationAxisLabelsRaw;
-    const nextDurationYAxis = adjustAxis && axisMode === "y"
-      ? replaceAxisValue(durationYAxisLabelsRaw, targetIq)
-      : durationYAxisLabelsRaw;
-    const nextSoiXAxis = adjustAxis && axisMode === "x"
-      ? replaceAxisValue(soiAxisLabelsRaw, targetIq)
-      : soiAxisLabelsRaw;
-    const nextSoiYAxis = adjustAxis && axisMode === "y"
-      ? replaceAxisValue(soiYAxisLabelsRaw, targetIq)
-      : soiYAxisLabelsRaw;
+    const nextDurationXAxis = adjustAxis && durationMode === "x" ? replaceAxisValue(durationAxisLabelsRaw, targetIq) : durationAxisLabelsRaw;
+    const nextDurationYAxis = adjustAxis && durationMode === "y" ? replaceAxisValue(durationYAxisLabelsRaw, targetIq) : durationYAxisLabelsRaw;
+    const nextSoiXAxis = adjustAxis && soiMode === "x" ? replaceAxisValue(soiAxisLabelsRaw, targetIq) : soiAxisLabelsRaw;
+    const nextSoiYAxis = adjustAxis && soiMode === "y" ? replaceAxisValue(soiYAxisLabelsRaw, targetIq) : soiYAxisLabelsRaw;
 
-    const durationChanges: Record<string, number> = {};
-    const soiChanges: Record<string, number> = {};
-
-    if (axisMode === "x") {
+    const durationChanges = {};
+    const soiChanges = {};
+    if (durationMode === "x") {
       const durationIndex = durationInfo.index;
-      const soiIndex = soiInfo.index;
-      for (let row = 0; row < durationSeries.length; row++) {
-        if (Number.isFinite(durationSeries[row])) {
-          durationChanges[String(row) + "-" + String(durationIndex)] = durationSeries[row];
-        }
-      }
-      for (let row = 0; row < soiSeries.length; row++) {
-        if (Number.isFinite(soiSeries[row])) {
-          soiChanges[String(row) + "-" + String(soiIndex)] = soiSeries[row];
-        }
-      }
+      durationSeries.forEach((value, row) => {
+        if (Number.isFinite(value)) durationChanges[String(row) + "-" + String(durationIndex)] = value;
+      });
     } else {
       const durationIndex = durationInfo.index;
-      const soiIndex = soiInfo.index;
       const durationCols = durationValues[0]?.length ?? 0;
-      const soiCols = soiValues[0]?.length ?? 0;
       for (let col = 0; col < durationCols; col++) {
-        if (Number.isFinite(durationSeries[col])) {
-          durationChanges[String(durationIndex) + "-" + String(col)] = durationSeries[col];
-        }
+        const value = durationSeries[col];
+        if (Number.isFinite(value)) durationChanges[String(durationIndex) + "-" + String(col)] = value;
       }
+    }
+    if (soiMode === "x") {
+      const soiIndex = soiInfo.index;
+      soiSeries.forEach((value, row) => {
+        if (Number.isFinite(value)) soiChanges[String(row) + "-" + String(soiIndex)] = value;
+      });
+    } else {
+      const soiIndex = soiInfo.index;
+      const soiCols = soiValues[0]?.length ?? 0;
       for (let col = 0; col < soiCols; col++) {
-        if (Number.isFinite(soiSeries[col])) {
-          soiChanges[String(soiIndex) + "-" + String(col)] = soiSeries[col];
-        }
+        const value = soiSeries[col];
+        if (Number.isFinite(value)) soiChanges[String(soiIndex) + "-" + String(col)] = value;
       }
     }
 
@@ -293,8 +290,8 @@ export function InjectionCalculatorModal({
       soiChanges,
       durationOtherAxis,
       soiOtherAxis,
-      durationAxisLabels: axisMode === "x" ? nextDurationXAxis : nextDurationYAxis,
-      soiAxisLabels: axisMode === "x" ? nextSoiXAxis : nextSoiYAxis,
+      durationAxisLabels: durationMode === "x" ? nextDurationXAxis : nextDurationYAxis,
+      soiAxisLabels: soiMode === "x" ? nextSoiXAxis : nextSoiYAxis,
       durationInRange,
       soiInRange,
       targetInRange,
@@ -302,6 +299,8 @@ export function InjectionCalculatorModal({
       soiMapName: soiSnapshot.mapName,
       durationIqAxis,
       soiIqAxis,
+      durationMode,
+      soiMode,
     };
   }, [
     adjustAxis,
@@ -309,6 +308,7 @@ export function InjectionCalculatorModal({
     direction,
     durationSnapshot,
     soiSnapshot,
+    snapshotVersion,
     targetAtdc,
     targetIq,
   ]);
@@ -403,6 +403,7 @@ export function InjectionCalculatorModal({
             <label className="rounded-xl border p-3" style={{ borderColor: border }}>
               <div className="mb-1 text-[11px]" style={{ color: muted }}>Axe quantité</div>
               <select value={axisMode} onChange={(e) => setAxisMode(e.target.value as AxisMode)} className="w-full rounded-lg border bg-black/20 px-3 py-2 text-sm" style={{ borderColor: border }}>
+                <option value="auto">Auto (détection IQ)</option>
                 <option value="x">Axe X</option>
                 <option value="y">Axe Y</option>
               </select>
@@ -418,6 +419,14 @@ export function InjectionCalculatorModal({
               <input type="checkbox" checked={adjustAxis} onChange={(e) => setAdjustAxis(e.target.checked)} />
               <span className="text-xs">Ajuster l'axe à {Number.isFinite(targetIq) ? targetIq : "—"} mg</span>
             </label>
+          </div>
+
+          <div className="rounded-xl border px-3 py-2 text-[11px]" style={{ borderColor: border, background: "rgba(124,58,237,.06)" }}>
+            <div className="font-semibold">Sources live</div>
+            <div className="mt-0.5 opacity-60">
+              Duration {durationSnapshot ? "✓ chargée" : "… en attente"} · SOI {soiSnapshot ? "✓ chargée" : "… en attente"}
+              {durationSnapshot && soiSnapshot && <> · IQ : {axisMode === "auto" ? inferIqAxis(durationSnapshot).toUpperCase() + " / " + inferIqAxis(soiSnapshot).toUpperCase() : axisMode.toUpperCase()}</>}
+            </div>
           </div>
 
           <div className="rounded-xl border p-4" style={{ borderColor: border }}>

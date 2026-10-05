@@ -1,54 +1,51 @@
-name: Manual Publish Breizh Reprog Windows
+name: Publish Breizh Reprog Windows
 
 on:
-  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - "Build Windows EXE"
+    types:
+      - completed
+    branches:
+      - master
 
 permissions:
+  actions: read
   contents: write
-
-env:
-  NODE_VERSION: 24
 
 jobs:
   publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: windows-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout built commit
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 1
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Download existing installer
+        uses: actions/download-artifact@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
+          name: breizh-reprog-windows-installer
+          path: release-assets
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Read version
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          "VERSION=$version" >> $env:GITHUB_ENV
+          $exe = Get-ChildItem -Path release-assets -Filter *.exe -Recurse | Select-Object -First 1
+          if (-not $exe) { throw "Installer .exe introuvable dans l'artifact." }
+          "EXE_PATH=$($exe.FullName)" >> $env:GITHUB_ENV
+          Write-Host "Version $version"
+          Write-Host "Installer $($exe.FullName)"
 
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "src-tauri -> target"
-
-      - name: Install dependencies
-        run: npm ci --no-audit --no-fund
-
-      - name: Generate Breizh Reprog icons
-        run: npm run tauri -- icon public/breizh-reprog-app-icon.svg
-
-      - name: Build and publish Windows installer
-        uses: tauri-apps/tauri-action@v1
+      - name: Publish GitHub release
+        shell: pwsh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: v__VERSION__
-          releaseName: Breizh Reprog X Ninnin Projet Perf v__VERSION__
-          releaseBody: |
-            Breizh Reprog X Ninnin Projet Perf Windows installer.
-            This release is also used by the in-app automatic updater.
-          releaseDraft: false
-          prerelease: false
-          args: --bundles nsis
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "v$env:VERSION" "$env:EXE_PATH" --repo "${{ github.repository }}" --title "Breizh Reprog X Ninnin Projet Perf v$env:VERSION" --notes "Breizh Reprog X Ninnin Projet Perf Windows installer. Cette release est utilisée par la mise à jour automatique."

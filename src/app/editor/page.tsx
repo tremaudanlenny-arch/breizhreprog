@@ -6432,7 +6432,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
 
   const renderToolsMenu = (placement: 'below' | 'side') => (
     <div
-      className={`absolute z-[80] w-[320px] max-w-[calc(100vw-20px)] p-2 border rounded-2xl shadow-2xl ${placement === 'below' ? 'top-full right-0 mt-2' : 'top-0 left-full ml-2'}`}
+      className={`absolute z-[80] w-[300px] max-w-[calc(100vw-20px)] p-2 border rounded-2xl shadow-2xl ${placement === 'below' ? 'top-full right-0 mt-2' : 'top-0 left-full ml-2'}`}
       style={{
         backgroundColor: theme === 'light' ? 'rgba(255,255,255,0.97)' : theme === 'oled' ? 'rgba(12,12,15,0.98)' : 'rgba(20,23,32,0.97)',
         backdropFilter: 'blur(22px) saturate(150%)',
@@ -6446,74 +6446,24 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
       <div className="flex items-center justify-between px-2 pb-2">
         <div>
           <div className="text-[13px] font-bold tracking-wide">OUTILS</div>
-          <div className="text-[10px] opacity-50">Calibration, analyse et édition</div>
-        </div>
-        <div className="rounded-lg px-2 py-1 text-[9px] font-semibold uppercase tracking-wider"
-          style={{ background: theme === 'light' ? 'rgba(124,58,237,.08)' : 'rgba(168,85,247,.14)', color: theme === 'light' ? '#6d28d9' : '#ddd6fe' }}>
-          v1.19
+          <div className="text-[10px] opacity-50">Calculateur ATDC</div>
         </div>
       </div>
 
-      <div className="px-2 pb-1 text-[9px] font-bold uppercase tracking-[0.16em] opacity-40">Historique</div>
-      <div className="grid grid-cols-2 gap-2 px-1 pb-3">
-        <button type="button" onClick={() => { setToolsMenuOpen(false); undoMapEditHistory(); }}
-          className={`group flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-black/[0.04]' : 'hover:bg-white/[0.06]'}`}
-          style={{ borderColor: getBorderColor() }}>
-          <Undo2 className="h-4 w-4 text-amber-400" />
-          <span className="min-w-0"><span className="block text-[11px] font-semibold">Annuler</span><span className="block text-[9px] opacity-45">Ctrl+Z</span></span>
-        </button>
-        <button type="button" onClick={() => { setToolsMenuOpen(false); redoMapEditHistory(); }}
-          className={`group flex items-center gap-2 rounded-xl border px-3 py-2.5 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-black/[0.04]' : 'hover:bg-white/[0.06]'}`}
-          style={{ borderColor: getBorderColor() }}>
-          <Redo2 className="h-4 w-4 text-emerald-400" />
-          <span className="min-w-0"><span className="block text-[11px] font-semibold">Rétablir</span><span className="block text-[9px] opacity-45">Ctrl+Y</span></span>
-        </button>
-      </div>
-
-      <div className="px-2 pb-1 text-[9px] font-bold uppercase tracking-[0.16em] opacity-40">Calibration</div>
-      <div className="space-y-1.5 px-1 pb-3">
-        <button type="button"
-          onClick={() => { setToolsMenuOpen(false); setCalibrationWorkspaceOpen(true); }}
-          className={`w-full rounded-xl border px-3 py-3 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-violet-50' : 'hover:bg-violet-500/[0.08]'}`}
-          style={{ borderColor: getBorderColor() }}>
-          <span className="flex items-center gap-2.5"><Gauge className="h-4 w-4 text-cyan-400" /><span className="text-[12px] font-semibold">Calibration Workspace</span><span className="ml-auto text-[9px] opacity-40">LIVE</span></span>
-          <span className="mt-1 block pl-6 text-[9px] opacity-45">Suivi Durée / SOI / ATDC en direct</span>
-        </button>
-
-        <button type="button"
-          onClick={() => { setToolsMenuOpen(false); setCalibrationToolsOpen(true); }}
-          className={`w-full rounded-xl border px-3 py-3 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-fuchsia-50' : 'hover:bg-fuchsia-500/[0.08]'}`}
-          style={{ borderColor: getBorderColor() }}>
-          <span className="flex items-center gap-2.5"><SlidersHorizontal className="h-4 w-4 text-fuchsia-400" /><span className="text-[12px] font-semibold">Calibration Tools</span><span className="ml-auto text-[9px] opacity-40">4 MODES</span></span>
-          <span className="mt-1 block pl-6 text-[9px] opacity-45">Analyse, MAP sensor, Map Doctor, snapshots</span>
-        </button>
-
-        <button type="button" onClick={openAtdcTool}
-          className={`w-full rounded-xl border px-3 py-3 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-purple-50' : 'hover:bg-purple-500/[0.08]'}`}
-          style={{ borderColor: getBorderColor() }}>
-          <span className="flex items-center gap-2.5"><Calculator className="h-4 w-4 text-violet-400" /><span className="text-[12px] font-semibold">Calculateur ATDC</span></span>
-          <span className="mt-1 block pl-6 text-[9px] opacity-45">Durée − SOI, avec sources live</span>
-        </button>
-
-        <button type="button"
-          onClick={() => { setToolsMenuOpen(false); setInjectionCalculatorOpen(true); }}
-          className={`w-full rounded-xl border px-3 py-3 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-fuchsia-50' : 'hover:bg-fuchsia-500/[0.08]'}`}
-          style={{ borderColor: getBorderColor() }}>
-          <span className="flex items-center gap-2.5"><Zap className="h-4 w-4 text-fuchsia-400" /><span className="text-[12px] font-semibold">Calculateur Injection</span></span>
-          <span className="mt-1 block pl-6 text-[9px] opacity-45">IQ, durée, avance et réglages associés</span>
-        </button>
-      </div>
-
-      <div className="px-2 pb-1 text-[9px] font-bold uppercase tracking-[0.16em] opacity-40">Aide</div>
-      <button type="button"
-        onClick={() => { setToolsMenuOpen(false); setShortcutHelpOpen(true); }}
-        className={`w-full rounded-xl border px-3 py-2.5 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-black/[0.04]' : 'hover:bg-white/[0.06]'}`}
-        style={{ borderColor: getBorderColor() }}>
-        <span className="flex items-center gap-2.5"><Keyboard className="h-4 w-4 text-violet-400" /><span className="text-[11px] font-semibold">Guide & raccourcis</span><span className="ml-auto text-[9px] opacity-45">F1</span></span>
+      <button
+        type="button"
+        onClick={openAtdcTool}
+        className={`w-full rounded-xl border px-4 py-4 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-purple-50' : 'hover:bg-purple-500/[0.08]'}`}
+        style={{ borderColor: getBorderColor() }}
+      >
+        <span className="flex items-center gap-2.5">
+          <Calculator className="h-5 w-5 text-violet-400" />
+          <span className="text-[13px] font-semibold">Calculateur ATDC</span>
+        </span>
+        <span className="mt-1 block pl-7 text-[10px] opacity-50">Durée − SOI avec les valeurs live de la map</span>
       </button>
     </div>
   );
-
 
   const handleMapClick3D = (clicked: MapData) => {
     handleMapClick(clicked);
@@ -6538,7 +6488,13 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         const filtered = prev.filter((m) => m.address !== map.address);
         return [...filtered, map];
       }
-      // Nouvelle map: enregistrer le statut EasyView au moment de l'ouverture
+      // Nouvelle map : ouvrir directement dans la vue 3D éditable.
+      setMapViewModes((prevModes) => {
+        const nextModes = new Map(prevModes);
+        nextModes.set(map.address, "3d");
+        return nextModes;
+      });
+      // Enregistrer aussi le statut EasyView pour conserver le comportement de l'interface.
       setMapEasyViewStatus((prevStatus) => {
         const updated = new Map(prevStatus);
         updated.set(map.address, easyViewMode);

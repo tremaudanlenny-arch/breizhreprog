@@ -1,32 +1,28 @@
-name: Publish Breizh Reprog Windows
+name: Manual Publish Breizh Reprog Windows
 
 on:
   workflow_dispatch:
-  workflow_run:
-    workflows:
-      - "Build Windows EXE"
-    types:
-      - completed
-    branches:
-      - master
+
 permissions:
   contents: write
 
+env:
+  NODE_VERSION: 24
+
 jobs:
   publish:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: windows-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 1
 
-      - name: Setup Node
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Setup Rust
@@ -35,10 +31,10 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: "src-tauri -> target"
 
-      - name: Install frontend dependencies
-        run: npm install
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
 
       - name: Generate Breizh Reprog icons
         run: npm run tauri -- icon public/breizh-reprog-app-icon.svg
@@ -55,3 +51,4 @@ jobs:
             This release is also used by the in-app automatic updater.
           releaseDraft: false
           prerelease: false
+          args: --bundles nsis

@@ -55,6 +55,7 @@ function MappingPoint({
   position,
   decimals,
   onSelect,
+  onStartDrag,
 }: {
   row: number;
   col: number;

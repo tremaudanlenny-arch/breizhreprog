@@ -5474,7 +5474,7 @@ dependencies = [
 
 [[package]]
 name = "breizh-reprog"
-version = "1.18.2"
+version = "1.19.5"
 dependencies = [
  "base64 0.22.1",
  "env_logger",

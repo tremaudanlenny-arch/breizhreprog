@@ -136,8 +136,8 @@ function MappingPoint({
           <Line
             raycast={() => null}
             points={[
-              [0, 0, -position[2]],
               [0, 0, 0],
+              [0, -position[1] + 0.08, 0],
             ]}
             color="#f0abfc"
             lineWidth={2.5}
@@ -175,6 +175,7 @@ export function Map3DMappingEditor({
   const [editText, setEditText] = useState("");
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const [percentValue, setPercentValue] = useState(5);
+  const [smoothStrength, setSmoothStrength] = useState(60);
   const [historyVersion, setHistoryVersion] = useState(0);
   const historyRef = useRef<number[][][]>([]);
   const futureRef = useRef<number[][][]>([]);
@@ -196,8 +197,8 @@ export function Map3DMappingEditor({
     return values.flatMap((row, r) =>
       row.map((value, c) => {
         const x = cols === 1 ? 0 : (c / (cols - 1) - 0.5) * WORLD_WIDTH;
-        const y = rows === 1 ? 0 : (0.5 - r / (rows - 1)) * WORLD_DEPTH;
-        const z = ((clamp(value, effectiveMin, effectiveMax) - effectiveMin) / valueRange) * WORLD_HEIGHT;
+        const z = rows === 1 ? 0 : (0.5 - r / (rows - 1)) * WORLD_DEPTH;
+        const y = 0.08 + ((clamp(value, effectiveMin, effectiveMax) - effectiveMin) / valueRange) * WORLD_HEIGHT;
         return { row: r, col: c, value, position: [x, y, z] as [number, number, number] };
       }),
     );
@@ -308,6 +309,27 @@ export function Map3DMappingEditor({
   };
 
   const selectedKey = selectedCell ? `${selectedCell.row}-${selectedCell.col}` : null;
+
+  const toggleSelection = (cell: { row: number; col: number }, additive: boolean) => {
+    if (additive && selectedCell) {
+      const r0 = Math.min(selectedCell.row, cell.row);
+      const r1 = Math.max(selectedCell.row, cell.row);
+      const c0 = Math.min(selectedCell.col, cell.col);
+      const c1 = Math.max(selectedCell.col, cell.col);
+      setSelectedCells((previous) => {
+        const next = new Set(previous);
+        for (let row = r0; row <= r1; row++) {
+          for (let col = c0; col <= c1; col++) {
+            next.add(`${row}-${col}`);
+          }
+        }
+        return next;
+      });
+      return;
+    }
+    setSelectedCells(new Set([`${cell.row}-${cell.col}`]));
+  };
+
   const effectiveSelection = useMemo(() => {
     const next = new Set(selectedCells);
     if (selectedKey) next.add(selectedKey);
@@ -385,6 +407,7 @@ export function Map3DMappingEditor({
         next[point.row][point.col] = first + (last - first) * t;
       });
     } else if (operation === "smooth") {
+      const strength = clamp(smoothStrength / 100, 0, 1);
       effectiveSelection.forEach((point) => {
         let sum = 0;
         let count = 0;
@@ -393,10 +416,17 @@ export function Map3DMappingEditor({
             const rr = point.row + dr;
             const cc = point.col + dc;
             const value = values[rr]?.[cc];
-            if (Number.isFinite(value)) { sum += value; count++; }
+            if (Number.isFinite(value)) {
+              sum += value;
+              count++;
+            }
           }
         }
-        if (count) next[point.row][point.col] = sum / count;
+        if (count > 0) {
+          const average = sum / count;
+          const current = values[point.row][point.col];
+          next[point.row][point.col] = current + (average - current) * strength;
+        }
       });
     } else if (operation === "slopeX" || operation === "slopeY") {
       const grouped = new Map<number, typeof effectiveSelection>();
@@ -502,7 +532,7 @@ export function Map3DMappingEditor({
   const handleBrushPlaneMove = (event: ThreeEvent<PointerEvent>) => {
     if (!draggingRef.current) return;
     event.stopPropagation();
-    const cell = brushCellFromPoint(event.point.x, event.point.y);
+    const cell = brushCellFromPoint(event.point.x, event.point.z);
     if (cell) applyBrushValue(cell, event.clientY, event.shiftKey);
   };
 
@@ -536,7 +566,7 @@ export function Map3DMappingEditor({
       title={selectedPoint ? "Glisse verticalement sur une poignée pour modifier la valeur" : "Clique une poignée pour la sélectionner"}
     >
       <Canvas
-        camera={{ position: [7.5, -8, 6.4], fov: 42 }}
+        camera={{ position: [7.5, 6.4, -8], fov: 42 }}
         dpr={[1, 2]}
         gl={{ antialias: true, alpha: true }}
         onCreated={({ gl }) => {
@@ -596,15 +626,7 @@ export function Map3DMappingEditor({
               position={cell.position}
               decimals={decimals}
               onSelect={onSelectCell}
-              onToggleSelection={(cell, additive) => {
-                setSelectedCells((previous) => {
-                  const next = new Set(additive ? previous : []);
-                  const key = `${cell.row}-${cell.col}`;
-                  if (additive && next.has(key)) next.delete(key);
-                  else next.add(key);
-                  return next;
-                });
-              }}
+              onToggleSelection={toggleSelection}
               onStartDrag={startDrag}
               onBrushMove={handleBrushMove}
               onHover={() => {
@@ -626,15 +648,15 @@ export function Map3DMappingEditor({
             dampingFactor={0.08}
             minDistance={3.2}
             maxDistance={18}
-            target={[0, 0, WORLD_HEIGHT * 0.35]}
+            target={[0, WORLD_HEIGHT * 0.35, 0]}
           />
         </group>
       </Canvas>
 
       <div className="absolute left-3 top-3 z-20 w-[330px] rounded-xl border border-violet-500/30 bg-black/65 px-3 py-2 text-[10px] text-white/75 backdrop-blur-md">
         <div className="font-semibold text-violet-300">MAPPING 3D — ÉDITION</div>
-        <div>Un point par case · clique = sélectionner · glisse ↑ / ↓</div>
-        <div className="opacity-55">Traverse les points pendant le drag pour dessiner · Shift = plus rapide · Ctrl+Z / Ctrl+Y</div>
+        <div>1 point = 1 cellule · glisse ↑/↓ = modifier</div>
+        <div className="opacity-55">Shift + clic = sélection rectangulaire · Smooth lisse toute la sélection · Ctrl+Z / Ctrl+Y</div>
 
         {selectedPoint && (
           <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2">
@@ -679,6 +701,16 @@ export function Map3DMappingEditor({
                 aria-label="Pourcentage"
               />
               <button type="button" className="rounded-md bg-violet-500/15 px-2 py-1 text-[9px] text-violet-200 hover:bg-violet-500/25" onClick={() => applySelectionOperation("smooth")}>Smooth</button>
+              <label className="flex items-center gap-1 rounded-md bg-violet-500/10 px-2 py-1 text-[9px] text-violet-200" title="Force du lissage">
+                <span>Force</span>
+                <input
+                  value={smoothStrength}
+                  onChange={(e) => setSmoothStrength(clamp(Number(e.target.value) || 0, 1, 100))}
+                  className="w-10 rounded border border-white/15 bg-black/30 px-1 text-center font-mono text-[9px] outline-none"
+                  inputMode="numeric"
+                />
+                <span>%</span>
+              </label>
               <button type="button" className="rounded-md bg-violet-500/15 px-2 py-1 text-[9px] text-violet-200 hover:bg-violet-500/25" onClick={() => applySelectionOperation("interpolate")}>Interpolate</button>
               <button type="button" className="rounded-md bg-violet-500/15 px-2 py-1 text-[9px] text-violet-200 hover:bg-violet-500/25" onClick={() => applySelectionOperation("flatten")}>Flatten</button>
             </div>

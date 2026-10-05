@@ -88,6 +88,7 @@ import { ConfirmModal } from "@/components/confirm-modal";
 import { AtdcToolModal } from "@/components/atdc-tool-modal";
 import { InjectionCalculatorModal, type InjectionApplyResult } from "@/components/injection-calculator-modal";
 import { CalibrationWorkspaceModal } from "@/components/calibration-workspace-modal";
+import { CalibrationToolsModal } from "@/components/calibration-tools-modal";
 import { PromptModal } from "@/components/prompt-modal";
 import { correctChecksumByEcuType, isChecksumSupported, ChecksumResult } from "@/lib/ecu/bosch/checksums";
 import { disableDTC, enableDTC, detectDTCs, type DetectedDTC, type CodeblockInfo } from "@/lib/ecu/bosch/dtc";
@@ -2116,6 +2117,7 @@ function EditorPageContent() {
   const [atdcToolSoi, setAtdcToolSoi] = useState(90);
   const [injectionCalculatorOpen, setInjectionCalculatorOpen] = useState(false);
   const [calibrationWorkspaceOpen, setCalibrationWorkspaceOpen] = useState(false);
+  const [calibrationToolsOpen, setCalibrationToolsOpen] = useState(false);
   const [injectionInitialIq, setInjectionInitialIq] = useState(85);
   const [injectionInitialAtdc, setInjectionInitialAtdc] = useState(9);
   const [calibrationEngineKey, setCalibrationEngineKey] = useState(0);
@@ -6467,6 +6469,17 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
       </button>
       <button
         type="button"
+        onClick={() => {
+          setToolsMenuOpen(false);
+          setCalibrationToolsOpen(true);
+        }}
+        className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors hover:bg-white/10"
+      >
+        <SlidersHorizontal className="w-4 h-4 text-fuchsia-400" />
+        <span className="text-sm">Calibration Tools</span>
+      </button>
+      <button
+        type="button"
         onClick={openAtdcTool}
         className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
       >
@@ -8784,6 +8797,21 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
             setActiveMapAddress(virtualMap.address);
           }}
           onClose={() => setAtdcToolOpen(false)}
+        />
+      )}
+
+      {calibrationToolsOpen && projectData && (
+        <CalibrationToolsModal
+          theme={theme}
+          maps={projectData.detectionResults.maps}
+          modifications={allMapModifications}
+          fileName={projectData.file_name}
+          ecuType={projectData.ecu_type}
+          onOpenMap={(map) => {
+            setCalibrationToolsOpen(false);
+            handleMapClick(map as MapData);
+          }}
+          onClose={() => setCalibrationToolsOpen(false)}
         />
       )}
 

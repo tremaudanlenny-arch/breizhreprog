@@ -3289,13 +3289,15 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
 
     // Net row reversal: each reverse() inverts the order, so an odd count means
     // display row 0 corresponds to file row N-1.
-    const rowsReversed = (rowsReversedCount % 2) === 1;
-    const colsReversed = xLabelsWereReversed;
+    let rowsReversed = (rowsReversedCount % 2) === 1;
+    let colsReversed = xLabelsWereReversed;
      
 
-    // ATDC live : la durée et la SOI doivent provenir de l'état CANONIQUE
-    // des maps, pas de leur orientation d'affichage. Cela évite les décalages
-    // quand une map est miroir/transposée et permet un vrai calcul TI - SOI.
+    // ATDC live : on reconstruit directement une grille PHYSIQUE
+    // RPM x IQ. Les 2 maps sources n'ont pas forcément la même orientation
+    // (Duration = RPM x IQ, SOI = IQ x RPM). On ne fait donc plus de
+    // correspondance cellule-à-cellule par indices : on interroge chaque map
+    // sur les mêmes coordonnées physiques RPM/IQ.
     if (isAtdcVirtual && liveMapSnapshots) {
       const durationSnapshot = liveMapSnapshots.get(sourceMapAddress);
       const soiSnapshot = atdcSoiMap ? liveMapSnapshots.get(atdcSoiMap.address) : undefined;
@@ -3307,11 +3309,28 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       const soiY = soiSnapshot?.sourceYAxisLabels ?? soiSnapshot?.yAxisLabels ?? [];
 
       const numericAxis = (axis: string[]) => axis.map((v) => Number.parseFloat(String(v)));
+      const axisKind = (
+        axisLabel: string | undefined,
+        labels: string[],
+        explicitValues?: number[] | null,
+      ): "rpm" | "iq" | "other" => {
+        const text = String(axisLabel || "").toLowerCase();
+        if (text.includes("rpm") || text.includes("engine speed")) return "rpm";
+        if (text.includes("iq") || text.includes("mg/st") || text.includes("mg/stroke")) return "iq";
+        const values = (explicitValues?.length ? explicitValues : labels)
+          .map((v) => Number.parseFloat(String(v)))
+          .filter(Number.isFinite);
+        if (values.length >= 2) {
+          const min = Math.min(...values);
+          const max = Math.max(...values);
+          if (max > 200 || min >= 250) return "rpm";
+          if (max <= 200) return "iq";
+        }
+        return "other";
+      };
 
       const findBracket = (axis: number[], target: number) => {
         if (!axis.length || !Number.isFinite(target)) return null;
-        const finite = axis.every(Number.isFinite);
-        if (!finite) return null;
         if (axis.length === 1) return { i0: 0, i1: 0, t: 0 };
         const ascending = axis[0] <= axis[axis.length - 1];
         const work = ascending ? axis : [...axis].reverse();
@@ -3344,26 +3363,16 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         if (!matrix.length || !matrix[0]?.length) return null;
         const rows = matrix.length;
         const cols = matrix[0].length;
-
-        // 1D map: use whichever non-trivial axis matches the target coordinate.
         if (rows === 1 || cols === 1) {
           const oneD = rows === 1 ? matrix[0] : matrix.map((row) => row[0]);
-          const axisCandidates = rows === 1 ? [xAxis, yAxis] : [yAxis, xAxis];
-          const preferredTarget = rows === 1 ? [x] : [y];
-          for (let k = 0; k < axisCandidates.length; k++) {
-            const axis = numericAxis(axisCandidates[k]);
-            const brackets = findBracket(axis, preferredTarget[k]);
-            if (!brackets) continue;
-            const values1d = rows === 1
-              ? matrix[0]
-              : matrix.map((row) => row[0]);
-            const a = values1d[brackets.i0] ?? values1d[0];
-            const b = values1d[brackets.i1] ?? a;
-            return a + (b - a) * brackets.t;
-          }
-          return Number.isFinite(oneD[0]) ? oneD[0] : null;
+          const axis = rows === 1 ? xAxis : yAxis;
+          const target = rows === 1 ? x : y;
+          const b = findBracket(numericAxis(axis), target);
+          if (!b) return Number.isFinite(oneD[0]) ? oneD[0] : null;
+          const a0 = oneD[b.i0] ?? oneD[0];
+          const a1 = oneD[b.i1] ?? a0;
+          return a0 + (a1 - a0) * b.t;
         }
-
         const xb = findBracket(numericAxis(xAxis), x);
         const yb = findBracket(numericAxis(yAxis), y);
         if (!xb || !yb) return null;
@@ -3377,114 +3386,65 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         return a + (b - a) * yb.t;
       };
 
-      if (
-        durationValues?.length &&
-        durationValues[0]?.length &&
-        soiValues?.length &&
-        soiValues[0]?.length
-      ) {
-        const durationRows = durationValues.length;
-        const durationCols = durationValues[0].length;
-        const liveAtdc = durationValues.map((row, r) =>
-          row.map((durationValue, c) => {
-            const rawX = Number.parseFloat(String(durationX[c] ?? ""));
-            const rawY = Number.parseFloat(String(durationY[r] ?? ""));
-            let soiValue: number | null = null;
+      const durationXKind = axisKind(
+        mapData.atdc_source_duration_map?.x_label ?? durationSnapshot?.xAxisLabel,
+        durationX,
+        mapData.atdc_source_duration_map?.x_axis_values,
+      );
+      const durationYKind = axisKind(
+        mapData.atdc_source_duration_map?.y_label ?? durationSnapshot?.yAxisLabel,
+        durationY,
+        mapData.atdc_source_duration_map?.y_axis_values,
+      );
+      const soiXKind = axisKind(
+        mapData.atdc_source_soi_map?.x_label ?? soiSnapshot?.xAxisLabel,
+        soiX,
+        mapData.atdc_source_soi_map?.x_axis_values,
+      );
+      const soiYKind = axisKind(
+        mapData.atdc_source_soi_map?.y_label ?? soiSnapshot?.yAxisLabel,
+        soiY,
+        mapData.atdc_source_soi_map?.y_axis_values,
+      );
 
-            // Duration 00 and SOI maps do not necessarily store the physical
-            // axes in the same orientation. In the screenshotmed EDC15 case:
-            // Duration = X RPM / Y IQ, while SOI = X IQ / Y RPM.
-            // Resolve RPM/IQ first, then query SOI using its own axis order.
-            const axisKind = (
-              axisLabel: string | undefined,
-              labels: string[],
-              explicitValues?: number[] | null,
-            ) => {
-              const text = String(axisLabel || "").toLowerCase();
-              if (text.includes("rpm") || text.includes("engine speed")) return "rpm";
-              if (text.includes("iq") || text.includes("mg/st") || text.includes("mg/stroke")) return "iq";
+      const rpmAxis = durationXKind === "rpm" ? durationX : durationY;
+      const iqAxis = durationXKind === "iq" ? durationX : durationY;
 
-              const values = (explicitValues?.length ? explicitValues : labels)
-                .map((v) => Number.parseFloat(String(v)))
-                .filter(Number.isFinite);
-              if (values.length >= 2) {
-                const min = Math.min(...values);
-                const max = Math.max(...values);
-                // In these Bosch injection maps, RPM axes are typically hundreds/thousands,
-                // while IQ axes are in mg/stroke and remain below ~200 mg/cp.
-                if (max > 200 || min >= 250) return "rpm";
-                if (max <= 200) return "iq";
-              }
-              return "other";
-            };
+      if (durationValues?.length && durationValues[0]?.length && rpmAxis.length && iqAxis.length) {
+        const durationQuery = (rpm: number, iq: number) => {
+          const x = durationXKind === "rpm" ? rpm : iq;
+          const y = durationYKind === "rpm" ? rpm : iq;
+          return sample2d(durationValues, numericAxis(durationX), numericAxis(durationY), x, y);
+        };
+        const soiQuery = (rpm: number, iq: number) => {
+          if (!soiValues?.length || !soiValues[0]?.length || !soiX.length || !soiY.length) return null;
+          const x = soiXKind === "rpm" ? rpm : soiXKind === "iq" ? iq : rpm;
+          const y = soiYKind === "rpm" ? rpm : soiYKind === "iq" ? iq : iq;
+          return sample2d(soiValues, numericAxis(soiX), numericAxis(soiY), x, y);
+        };
 
-            const durationXKind = axisKind(
-              mapData.atdc_source_duration_map?.x_label ?? durationSnapshot?.xAxisLabel,
-              durationX,
-              mapData.atdc_source_duration_map?.x_axis_values,
-            );
-            const durationYKind = axisKind(
-              mapData.atdc_source_duration_map?.y_label ?? durationSnapshot?.yAxisLabel,
-              durationY,
-              mapData.atdc_source_duration_map?.y_axis_values,
-            );
-            const rpmValue =
-              durationXKind === "rpm" ? rawX :
-              durationYKind === "rpm" ? rawY : rawX;
-            const iqValue =
-              durationXKind === "iq" ? rawX :
-              durationYKind === "iq" ? rawY : rawY;
-
-            if (soiValues?.length && soiX.length && soiY.length) {
-              const soiXKind = axisKind(
-                mapData.atdc_source_soi_map?.x_label ?? soiSnapshot?.xAxisLabel,
-                soiX,
-                mapData.atdc_source_soi_map?.x_axis_values,
-              );
-              const soiYKind = axisKind(
-                mapData.atdc_source_soi_map?.y_label ?? soiSnapshot?.yAxisLabel,
-                soiY,
-                mapData.atdc_source_soi_map?.y_axis_values,
-              );
-              const soiQueryX =
-                soiXKind === "rpm" ? rpmValue :
-                soiXKind === "iq" ? iqValue :
-                rpmValue;
-              const soiQueryY =
-                soiYKind === "rpm" ? rpmValue :
-                soiYKind === "iq" ? iqValue :
-                iqValue;
-              soiValue = sample2d(soiValues, soiX, soiY, soiQueryX, soiQueryY);
-            }
-
-            // Fallback only when no live SOI snapshot exists. The primary
-            // path above uses the physical RPM/IQ axes and is the authoritative
-            // calculation for the virtual ATDC map.
-            if (soiValue == null && atdcSoiMap && soiLayout && !(soiValues?.length)) {
-              const sourceRows = durationValues.length;
-              const sourceCols = durationValues[0]?.length ?? 0;
-              const soiRow = sourceRows > 1 && soiLayout.rows > 1
-                ? Math.round(r * (soiLayout.rows - 1) / (sourceRows - 1))
-                : 0;
-              const soiCol = sourceCols > 1 && soiLayout.cols > 1
-                ? Math.round(c * (soiLayout.cols - 1) / (sourceCols - 1))
-                : 0;
-              soiValue = readCorrectedSourceCell(
-                atdcSoiMap as typeof mapData,
-                atdcSoiMap.address,
-                soiRow,
-                soiCol,
-                soiLayout,
-              );
-            }
-
+        // Convention ATDC utilisée dans l'éditeur : SOI positif = avant PMH.
+        // Fin d'injection = durée - SOI. Une valeur négative signifie que
+        // l'injection se termine encore avant le PMH, une valeur positive après.
+        const liveAtdc = rpmAxis.map((rpmLabel) => {
+          const rpm = Number.parseFloat(String(rpmLabel));
+          return iqAxis.map((iqLabel) => {
+            const iq = Number.parseFloat(String(iqLabel));
+            const durationValue = durationQuery(rpm, iq);
+            const soiValue = soiQuery(rpm, iq);
+            if (!Number.isFinite(durationValue)) return 0;
             return Number.isFinite(soiValue) ? Number(durationValue) - Number(soiValue) : Number(durationValue);
-          }),
-        );
+          });
+        });
 
+        // Grille finale explicite : Y = RPM, X = IQ.
         values.splice(0, values.length, ...liveAtdc);
-        if (durationX.length) xLabels.splice(0, xLabels.length, ...durationX);
-        if (durationY.length) yLabels.splice(0, yLabels.length, ...durationY);
+        xLabels.splice(0, xLabels.length, ...iqAxis);
+        yLabels.splice(0, yLabels.length, ...rpmAxis);
+        // Les valeurs sont déjà dans l'orientation d'affichage finale.
+        needsAxisSwap = false;
+        rowsReversed = false;
+        colsReversed = false;
       }
     }
 

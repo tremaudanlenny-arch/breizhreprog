@@ -93,7 +93,7 @@ import { AtdcToolModal } from "@/components/atdc-tool-modal";
 import { InjectionCalculatorModal, type InjectionApplyResult } from "@/components/injection-calculator-modal";
 import { CalibrationWorkspaceModal } from "@/components/calibration-workspace-modal";
 import { CalibrationToolsModal } from "@/components/calibration-tools-modal";
-import { CalibrationMathTools } from "@/components/calibration-math-tools";
+import { CalibrationMathToolModal, type CalibrationMathTool } from "@/components/calibration-math-tool-modal";
 import { PromptModal } from "@/components/prompt-modal";
 import { correctChecksumByEcuType, isChecksumSupported, ChecksumResult } from "@/lib/ecu/bosch/checksums";
 import { disableDTC, enableDTC, detectDTCs, type DetectedDTC, type CodeblockInfo } from "@/lib/ecu/bosch/dtc";
@@ -2161,7 +2161,7 @@ function EditorPageContent() {
   const [injectionCalculatorOpen, setInjectionCalculatorOpen] = useState(false);
   const [calibrationWorkspaceOpen, setCalibrationWorkspaceOpen] = useState(false);
   const [calibrationToolsOpen, setCalibrationToolsOpen] = useState(false);
-  const [calibrationMathToolsOpen, setCalibrationMathToolsOpen] = useState(false);
+  const [calibrationMathTool, setCalibrationMathTool] = useState<CalibrationMathTool | null>(null);
   const [injectionInitialIq, setInjectionInitialIq] = useState(85);
   const [injectionInitialAtdc, setInjectionInitialAtdc] = useState(9);
   const [calibrationEngineKey, setCalibrationEngineKey] = useState(0);
@@ -6471,56 +6471,75 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     });
   }, [atdcSourceMaps, atdcSoiMaps]);
 
-  const renderToolsMenu = (placement: 'below' | 'side') => (
-    <div
-      className={`absolute z-[80] w-[300px] max-w-[calc(100vw-20px)] p-2 border rounded-2xl shadow-2xl ${placement === 'below' ? 'top-full right-0 mt-2' : 'top-0 left-full ml-2'}`}
-      style={{
-        backgroundColor: theme === 'light' ? 'rgba(255,255,255,0.97)' : theme === 'oled' ? 'rgba(12,12,15,0.98)' : 'rgba(20,23,32,0.97)',
-        backdropFilter: 'blur(22px) saturate(150%)',
-        WebkitBackdropFilter: 'blur(22px) saturate(150%)',
-        borderColor: getBorderColor(),
-        color: getTextColor(),
-      }}
-      onMouseDown={(e) => e.stopPropagation()}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <div className="flex items-center justify-between px-2 pb-2">
-        <div>
-          <div className="text-[13px] font-bold tracking-wide">OUTILS</div>
-          <div className="text-[10px] opacity-50">Calculateurs et outils de calibration</div>
+  const renderToolsMenu = (placement: 'below' | 'side') => {
+    const tools: Array<{ id: CalibrationMathTool; label: string; detail: string }> = [
+      { id: "rpm", label: "Convertisseur RPM", detail: "RPM ↔ temps par degré" },
+      { id: "iq-duration", label: "IQ → durée", detail: "Quantité → durée d'injection" },
+      { id: "afr", label: "Calculateur AFR", detail: "AFR uniquement" },
+      { id: "injector-flow", label: "Débit injecteur", detail: "Débit selon la pression" },
+      { id: "injection-duration", label: "Durée d'injection", detail: "Durée → quantité théorique" },
+      { id: "ramp", label: "Générateur de rampe", detail: "Rampe linéaire ou progressive" },
+    ];
+
+    return (
+      <div
+        className={`absolute z-[80] w-[300px] max-w-[calc(100vw-20px)] p-2 border rounded-2xl shadow-2xl ${placement === 'below' ? 'top-full right-0 mt-2' : 'top-0 left-full ml-2'}`}
+        style={{
+          backgroundColor: theme === 'light' ? 'rgba(255,255,255,0.97)' : theme === 'oled' ? 'rgba(12,12,15,0.98)' : 'rgba(20,23,32,0.97)',
+          backdropFilter: 'blur(22px) saturate(150%)',
+          WebkitBackdropFilter: 'blur(22px) saturate(150%)',
+          borderColor: getBorderColor(),
+          color: getTextColor(),
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-2 pb-2">
+          <div>
+            <div className="text-[13px] font-bold tracking-wide">OUTILS</div>
+            <div className="text-[10px] opacity-50">Chaque outil séparément</div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setToolsMenuOpen(false);
+            openAtdcTool();
+          }}
+          className={`mb-2 w-full rounded-xl border px-3 py-3 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-purple-50' : 'hover:bg-purple-500/[0.08]'}`}
+          style={{ borderColor: getBorderColor() }}
+        >
+          <span className="flex items-center gap-2.5">
+            <Calculator className="h-4 w-4 text-violet-400" />
+            <span className="text-[12px] font-semibold">Calculateur ATDC</span>
+          </span>
+          <span className="mt-1 block pl-6 text-[10px] opacity-50">TI − SOI avec les axes RPM / IQ</span>
+        </button>
+
+        <div className="space-y-1.5">
+          {tools.map((tool) => (
+            <button
+              key={tool.id}
+              type="button"
+              onClick={() => {
+                setToolsMenuOpen(false);
+                setCalibrationMathTool(tool.id);
+              }}
+              className={`w-full rounded-xl border px-3 py-3 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-purple-50' : 'hover:bg-purple-500/[0.08]'}`}
+              style={{ borderColor: getBorderColor() }}
+            >
+              <span className="flex items-center gap-2.5">
+                <Calculator className="h-4 w-4 text-fuchsia-400" />
+                <span className="text-[12px] font-semibold">{tool.label}</span>
+              </span>
+              <span className="mt-1 block pl-6 text-[10px] opacity-50">{tool.detail}</span>
+            </button>
+          ))}
         </div>
       </div>
-
-      <button
-        type="button"
-        onClick={openAtdcTool}
-        className={`w-full rounded-xl border px-4 py-4 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-purple-50' : 'hover:bg-purple-500/[0.08]'}`}
-        style={{ borderColor: getBorderColor() }}
-      >
-        <span className="flex items-center gap-2.5">
-          <Calculator className="h-5 w-5 text-violet-400" />
-          <span className="text-[13px] font-semibold">Calculateur ATDC</span>
-        </span>
-        <span className="mt-1 block pl-7 text-[10px] opacity-50">Durée − SOI avec les valeurs live de la map</span>
-      <button
-        type="button"
-        onClick={() => {
-          setToolsMenuOpen(false);
-          setCalibrationMathToolsOpen(true);
-        }}
-        className={`mt-2 w-full rounded-xl border px-4 py-4 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-purple-50' : 'hover:bg-purple-500/[0.08]'}`}
-        style={{ borderColor: getBorderColor() }}
-      >
-        <span className="flex items-center gap-2.5">
-          <Calculator className="h-5 w-5 text-fuchsia-400" />
-          <span className="text-[13px] font-semibold">Outils de calcul</span>
-        </span>
-        <span className="mt-1 block pl-7 text-[10px] opacity-50">RPM · IQ / durée · AFR / lambda · injecteur · rampe</span>
-      </button>
-
-      </button>
-    </div>
-  );
+    );
+  };
 
   const handleMapClick3D = (clicked: MapData) => {
     handleMapClick(clicked);
@@ -8875,10 +8894,11 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         />
       )}
 
-      {calibrationMathToolsOpen && (
-        <CalibrationMathTools
+      {calibrationMathTool && (
+        <CalibrationMathToolModal
           theme={theme}
-          onClose={() => setCalibrationMathToolsOpen(false)}
+          tool={calibrationMathTool}
+          onClose={() => setCalibrationMathTool(null)}
         />
       )}
 

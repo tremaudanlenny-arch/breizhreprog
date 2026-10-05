@@ -8306,6 +8306,8 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                     disableGraphColors={settings.disableGraphColors}
                     allMaps={projectData.detectionResults.maps}
                     ecuType={projectData.ecu_type}
+                    onOpenProperties={() => handleOpenMapProperties(atdcToolMap)}
+                    displaySettings={mapDisplaySettingsStore.get(atdcToolMap.address)}
                     onAutoSize={(w, h) => {
                       const workspace = workspaceRef.current?.getBoundingClientRect();
                       if (!workspace) return;

@@ -39,6 +39,7 @@ interface Props {
   fileName?: string;
   ecuType?: string;
   onOpenMap: (map: CalibrationToolsMap) => void;
+  onRestoreSnapshot?: (changes: Map<number, Record<string, number>>) => void;
   onClose: () => void;
 }
 
@@ -74,6 +75,7 @@ export function CalibrationToolsModal({
   fileName,
   ecuType,
   onOpenMap,
+  onRestoreSnapshot,
   onClose,
 }: Props) {
   const light = theme === "light";
@@ -86,6 +88,12 @@ export function CalibrationToolsModal({
   const [filter, setFilter] = useState("");
   const [snapshotName, setSnapshotName] = useState("Test calibration");
   const [savedMessage, setSavedMessage] = useState("");
+  const [storedSnapshots, setStoredSnapshots] = useState<Array<{
+    key: string;
+    name: string;
+    createdAt: string;
+    modifications: Array<{ address: number; cells: Record<string, number> }>;
+  }>>([]);
 
   const changed = useMemo(
     () => maps.filter((map) => Object.keys(modifications.get(map.address) || {}).length > 0),
@@ -211,10 +219,45 @@ export function CalibrationToolsModal({
       link.click();
       URL.revokeObjectURL(url);
       setSavedMessage("Snapshot sauvegardé.");
+      refreshStoredSnapshots();
     } catch {
       setSavedMessage("Impossible de sauvegarder le snapshot.");
     }
   };
+
+  const refreshStoredSnapshots = () => {
+    try {
+      const items: typeof storedSnapshots = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || !key.startsWith("breizhreprog-snapshot:")) continue;
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.fileName !== fileName) continue;
+        items.push({
+          key,
+          name: parsed.name || "Snapshot",
+          createdAt: parsed.createdAt || "",
+          modifications: Array.isArray(parsed.modifications) ? parsed.modifications : [],
+        });
+      }
+      items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      setStoredSnapshots(items.slice(0, 20));
+    } catch {
+      setStoredSnapshots([]);
+    }
+  };
+
+  const restoreSnapshot = (snapshot: typeof storedSnapshots[number]) => {
+    if (!onRestoreSnapshot) return;
+    const changes = new Map<number, Record<string, number>>();
+    snapshot.modifications.forEach((entry) => changes.set(Number(entry.address), { ...entry.cells }));
+    onRestoreSnapshot(changes);
+    setSavedMessage("Snapshot restauré dans la session.");
+  };
+
+  useEffect(() => { if (tab === "snapshots") refreshStoredSnapshots(); }, [tab, fileName]);
 
   const tabs = [
     ["analyse", "Analyse avant export", ShieldCheck],
@@ -462,8 +505,32 @@ export function CalibrationToolsModal({
                   </button>
                   {savedMessage && <div className="mt-3 text-xs text-emerald-400">{savedMessage}</div>}
                 </div>
-                <div className="rounded-xl border p-4 text-[11px]" style={{ borderColor: border, color: muted }}>
-                  La restauration automatique sera branchée ensuite sur l'historique global. Pour cette version, le snapshot reste une sauvegarde externe sûre.
+                <div className="rounded-xl border p-4" style={{ borderColor: border, background: card }}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-bold">Snapshots disponibles</div>
+                      <div className="text-[10px]" style={{ color: muted }}>Restauration en mémoire, avec historique Undo.</div>
+                    </div>
+                    <button type="button" onClick={refreshStoredSnapshots} className="rounded-lg border px-3 py-2 text-[10px] font-semibold" style={{ borderColor: border }}>
+                      Actualiser
+                    </button>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {storedSnapshots.length === 0 ? (
+                      <div className="text-[11px]" style={{ color: muted }}>Aucun snapshot trouvé pour ce fichier.</div>
+                    ) : storedSnapshots.map((snapshot) => (
+                      <div key={snapshot.key} className="flex items-center gap-3 rounded-lg border px-3 py-2" style={{ borderColor: border }}>
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-semibold truncate">{snapshot.name}</div>
+                          <div className="text-[10px] font-mono" style={{ color: muted }}>{snapshot.createdAt} · {snapshot.modifications.length} maps</div>
+                        </div>
+                        <button type="button" onClick={() => restoreSnapshot(snapshot)} disabled={!onRestoreSnapshot}
+                          className="rounded-lg px-3 py-2 text-[10px] font-bold text-white bg-gradient-to-r from-violet-600 to-fuchsia-500 disabled:opacity-40">
+                          Restaurer
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </>
             )}

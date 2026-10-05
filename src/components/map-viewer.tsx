@@ -5437,60 +5437,81 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     <span className="text-[10px] px-1.5 opacity-70">Clic = sélectionner · double-clic = valeur</span>
   )}
 </div>
-                    <Plot
-                      key={`3d-easyview-${mapData.address}`}
-                      data={plot3DData}
-                      layout={{
-                        paper_bgcolor: "transparent",
-                        plot_bgcolor: "transparent",
-                        scene: {
-                          xaxis: {
-                            title: parseAxisUnits().xLabel + " (" + parseAxisUnits().xUnit + ")",
-                            backgroundcolor: "transparent",
-                            gridcolor: "#374151",
-                            showbackground: true,
-                            color: "#9ca3af",
-                            tickmode: "array" as const,
-                            tickvals: plot3DTicks.xTickVals,
-                            ticktext: plot3DTicks.xTickText,
+                    {mapping3DMode && !isAtdcVirtual ? (
+                      <div className="absolute inset-0 z-10">
+                        <Map3DMappingEditor
+                          values={displayMapValues}
+                          minValue={(() => {
+                            const flat = displayMapValues.flat();
+                            return flat.length ? Math.min(...flat) : 0;
+                          })()}
+                          maxValue={(() => {
+                            const flat = displayMapValues.flat();
+                            return flat.length ? Math.max(...flat) : 1;
+                          })()}
+                          selectedCell={selected3DCell}
+                          onSelectCell={(cell) => setSelected3DCell(cell)}
+                          onChangeCell={updateDisplayCellValue}
+                          onChangeCells={updateDisplayCells}
+                          xLabels={displayXAxisLabels}
+                          yLabels={displayYAxisLabels}
+                          decimals={cellDecimals}
+                          theme={theme}
+                        />
+                      </div>
+                    ) : (
+                      <Plot
+                        key={`3d-easyview-${mapData.address}`}
+                        data={plot3DData}
+                        layout={{
+                          paper_bgcolor: "transparent",
+                          plot_bgcolor: "transparent",
+                          scene: {
+                            xaxis: {
+                              title: parseAxisUnits().xLabel + " (" + parseAxisUnits().xUnit + ")",
+                              backgroundcolor: "transparent",
+                              gridcolor: "#374151",
+                              showbackground: true,
+                              color: "#9ca3af",
+                              tickmode: "array" as const,
+                              tickvals: plot3DTicks.xTickVals,
+                              ticktext: plot3DTicks.xTickText,
+                            },
+                            yaxis: {
+                              title: parseAxisUnits().yLabel + " (" + parseAxisUnits().yUnit + ")",
+                              backgroundcolor: "transparent",
+                              gridcolor: "#374151",
+                              showbackground: true,
+                              color: "#9ca3af",
+                              tickmode: "array" as const,
+                              tickvals: plot3DTicks.yTickVals,
+                              ticktext: plot3DTicks.yTickText,
+                            },
+                            zaxis: {
+                              title: "Value",
+                              backgroundcolor: "transparent",
+                              gridcolor: "#374151",
+                              showbackground: true,
+                              color: "#9ca3af",
+                            },
+                            camera: cameraPosition,
+                            aspectmode: "manual",
+                            aspectratio: { x: 1, y: 1, z: 0.7 },
                           },
-                          yaxis: {
-                            title: parseAxisUnits().yLabel + " (" + parseAxisUnits().yUnit + ")",
-                            backgroundcolor: "transparent",
-                            gridcolor: "#374151",
-                            showbackground: true,
-                            color: "#9ca3af",
-                            tickmode: "array" as const,
-                            tickvals: plot3DTicks.yTickVals,
-                            ticktext: plot3DTicks.yTickText,
-                          },
-                          zaxis: {
-                            title: "Value",
-                            backgroundcolor: "transparent",
-                            gridcolor: "#374151",
-                            showbackground: true,
-                            color: "#9ca3af",
-                          },
-                          // Position de la caméra restaurée depuis savedCameraPositions (persiste entre les montages)
-                          camera: cameraPosition,
-                          aspectmode: "manual",
-                          aspectratio: { x: 1, y: 1, z: 0.7 },
-                        },
-                        margin: { t: 20, r: 0, b: 0, l: 0 },
-                        autosize: true,
-                        // La révision de zoom force l'application de la caméra
-                        // des boutons +/− (uirevision fige sinon l'état UI)
-                        uirevision: `${mapData.address}-z${cameraZoomRev}`,
-                      }}
-                      config={{
-                        displayModeBar: false,
-                        displaylogo: false,
-                        staticPlot: isDraggingWindow, // Freeze plot interactions during window drag for better performance
-                      }}
-                      style={{ width: "100%", height: "100%" }}
-                      useResizeHandler={true}
-                      onRelayout={handlePlotlyRelayout}
-                    />
+                          margin: { t: 20, r: 0, b: 0, l: 0 },
+                          autosize: true,
+                          uirevision: `${mapData.address}-z${cameraZoomRev}`,
+                        }}
+                        config={{
+                          displayModeBar: false,
+                          displaylogo: false,
+                          staticPlot: isDraggingWindow,
+                        }}
+                        style={{ width: "100%", height: "100%" }}
+                        useResizeHandler={true}
+                        onRelayout={handlePlotlyRelayout}
+                      />
+                    )}
                     {/* Zoom +/− du graphique 3D — même style que les onglets de
                         vue, coin BAS-GAUCHE du panneau 3D (à droite, ils
                         recouvraient la poignée de redimensionnement) */}

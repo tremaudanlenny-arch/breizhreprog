@@ -2,8 +2,8 @@
 // n'a pas d'onglets) : commande Rust limitée au dépôt ZedSuite.
 import { invoke } from "@tauri-apps/api/core";
 
-export const ZEDSUITE_RELEASES_URL = "https://github.com/LeZed97/ZedSuite/releases";
-export const ZEDSUITE_REPO_URL = "https://github.com/LeZed97/ZedSuite";
+export const BREIZH_REPROG_RELEASES_URL = "https://github.com/tremaudanlenny-arch/breizhreprog/releases";
+export const BREIZH_REPROG_REPO_URL = "https://github.com/tremaudanlenny-arch/breizhreprog";
 
 export async function openExternal(url: string): Promise<void> {
   try {

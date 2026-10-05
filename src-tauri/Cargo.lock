@@ -5473,8 +5473,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "zedsuite"
-version = "1.2.5"
+name = "breizh-reprog"
+version = "1.16.0"
 dependencies = [
  "base64 0.22.1",
  "env_logger",

@@ -87,6 +87,7 @@ import {
 import { ConfirmModal } from "@/components/confirm-modal";
 import { AtdcToolModal } from "@/components/atdc-tool-modal";
 import { InjectionCalculatorModal, type InjectionApplyResult } from "@/components/injection-calculator-modal";
+import { CalibrationWorkspaceModal } from "@/components/calibration-workspace-modal";
 import { PromptModal } from "@/components/prompt-modal";
 import { correctChecksumByEcuType, isChecksumSupported, ChecksumResult } from "@/lib/ecu/bosch/checksums";
 import { disableDTC, enableDTC, detectDTCs, type DetectedDTC, type CodeblockInfo } from "@/lib/ecu/bosch/dtc";
@@ -2114,6 +2115,10 @@ function EditorPageContent() {
   const [atdcSelectedSource, setAtdcSelectedSource] = useState<MapData | null>(null);
   const [atdcToolSoi, setAtdcToolSoi] = useState(90);
   const [injectionCalculatorOpen, setInjectionCalculatorOpen] = useState(false);
+  const [calibrationWorkspaceOpen, setCalibrationWorkspaceOpen] = useState(false);
+  const [injectionInitialIq, setInjectionInitialIq] = useState(85);
+  const [injectionInitialAtdc, setInjectionInitialAtdc] = useState(9);
+  const [calibrationEngineKey, setCalibrationEngineKey] = useState(0);
 
 
   // Store global pour les modifications de toutes les maps (persist même après fermeture des fenêtres)
@@ -6451,6 +6456,17 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
       </div>
       <button
         type="button"
+        onClick={() => {
+          setToolsMenuOpen(false);
+          setCalibrationWorkspaceOpen(true);
+        }}
+        className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+      >
+        <Gauge className="w-4 h-4 text-cyan-400" />
+        <span className="text-sm">Calibration Workspace <span className="opacity-50">1.19</span></span>
+      </button>
+      <button
+        type="button"
         onClick={openAtdcTool}
         className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
       >
@@ -6484,6 +6500,16 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     </div>
   );
 
+
+  const handleMapClick3D = (clicked: MapData) => {
+    handleMapClick(clicked);
+    setMapViewModes((prev) => {
+      const next = new Map(prev);
+      next.set(clicked.address, "3d");
+      return next;
+    });
+    setActiveMapAddress(clicked.address);
+  };
 
   const handleMapClick = (clicked: MapData) => {
     // Block map clicks when mappack is locked
@@ -8556,7 +8582,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                   return (
                     <div key={`live-calibration-${liveMap.address}`} style={{ width: 2, height: 2 }}>
                       <MapViewer
-                        key={`live-calibration-viewer-${liveMap.address}`}
+                        key={`live-calibration-viewer-${calibrationEngineKey}-${liveMap.address}`}
                         mapData={liveMap}
                         fileData={projectData.file_data}
                         projectName={projectData.project_name}
@@ -8680,6 +8706,34 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         </div>
       </div>
 
+      {calibrationWorkspaceOpen && projectData && (
+        <CalibrationWorkspaceModal
+          theme={theme}
+          maps={projectData.detectionResults.maps}
+          durationMaps={atdcSourceMaps}
+          soiMaps={atdcSoiMaps}
+          snapshots={mapPlot3DDataRef.current}
+          modifications={allMapModifications}
+          onOpenMap3D={handleMapClick3D}
+          onOpenInjectionCalculator={(targetIq, targetAtdc) => {
+            setInjectionInitialIq(targetIq);
+            setInjectionInitialAtdc(targetAtdc);
+            setCalibrationWorkspaceOpen(false);
+            setInjectionCalculatorOpen(true);
+          }}
+          onOpenAtdc={() => {
+            setCalibrationWorkspaceOpen(false);
+            openAtdcTool();
+          }}
+          onResetLive={() => {
+            clearMapDataCache();
+            setCalibrationEngineKey((key) => key + 1);
+            setMapSnapshotVersion((version) => version + 1);
+          }}
+          onClose={() => setCalibrationWorkspaceOpen(false)}
+        />
+      )}
+
       {atdcToolOpen && (
         <AtdcToolModal
           theme={theme}
@@ -8739,6 +8793,8 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
           durationMaps={atdcSourceMaps}
           soiMaps={atdcSoiMaps}
           snapshots={mapPlot3DDataRef.current}
+          initialTargetIq={injectionInitialIq}
+          initialTargetAtdc={injectionInitialAtdc}
           onApply={handleInjectionCalculatorApply}
           onClose={() => setInjectionCalculatorOpen(false)}
         />

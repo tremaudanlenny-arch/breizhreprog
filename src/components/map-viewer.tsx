@@ -26,7 +26,7 @@ type ViewMode = "text" | "2d" | "3d";
 
 // Cache pour mémoriser les données extraites de chaque map (par adresse)
 // Ce cache évite de recalculer les données à chaque changement de map
-const CACHE_VERSION = "2026-09-axis-corrections-v38";
+const CACHE_VERSION = "2026-10-breizhreprog-atdc-v1";
 
 // Map globale pour sauvegarder les positions de caméra de chaque map 3D
 // Persiste entre les montages/démontages du composant
@@ -442,6 +442,8 @@ interface MapViewerProps {
      *  dans le binaire (axe fixe d'un XDF TunerPro). */
     x_axis_values?: number[] | null;
     y_axis_values?: number[] | null;
+    atdc_source_duration_address?: number;
+    atdc_soi_default?: number;
   };
   fileData: number[];
   projectName?: string;
@@ -602,6 +604,11 @@ export function MapViewer({
   const { theme: themeContext } = useTheme();
   const theme = themeProp ?? themeContext;
   const { t } = useI18n();
+  const isAtdcVirtual = mapData.map_type === "atdc_virtual";
+  const [atdcSoi, setAtdcSoi] = useState<number>(mapData.atdc_soi_default ?? 90);
+  useEffect(() => {
+    if (isAtdcVirtual) setAtdcSoi(mapData.atdc_soi_default ?? 90);
+  }, [mapData.address, isAtdcVirtual, mapData.atdc_soi_default]);
 
   // Active value-edit prompt (cell / X axis / Y axis). null = closed. The
   // themed PromptModal replaces the native window.prompt() so it matches the
@@ -2228,8 +2235,11 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
   // Utiliser useMemo pour m├®moriser les donn├®es extraites et ├®viter les recalculs
   const extractedData = useMemo(() => {
     // V├®rifier le cache d'abord
+    const sourceMapAddress = mapData.map_type === "atdc_virtual"
+      ? (mapData.atdc_source_duration_address ?? mapData.address)
+      : mapData.address;
     const cacheKey = getCacheKey(mapData.address, projectName, fileName);
-    const fileDataHash = getFileDataHash(fileData, mapData.address);
+    const fileDataHash = getFileDataHash(fileData, sourceMapAddress);
     const cached = mapDataCache.get(cacheKey);
 
     // Get current dimensions from mapData (handle both 2D and 1D maps)
@@ -2342,7 +2352,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
 
 
     const values: number[][] = [];
-    const startAddress = mapData.address;
+    const startAddress = sourceMapAddress;
     
     // CRITICAL: Read axes from file - swap addresses if axes are swapped
     const xLabels = [];
@@ -2838,7 +2848,8 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
               ? displaySettings.map.offset
               : (mapData.offset ?? 0.0);
           const correctedValue = (rawValue * correction) + offsetValue;
-          rowValues.push(correctedValue);
+          const finalValue = isAtdcVirtual ? (correctedValue - atdcSoi) : correctedValue;
+          rowValues.push(finalValue);
         } else {
           rowValues.push(0);
         }
@@ -3039,7 +3050,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       xAxisIsIndex,
       yAxisIsIndex,
     };
-  }, [mapData, fileData, projectName, fileName, displaySettings]);
+  }, [mapData, fileData, projectName, fileName, displaySettings, atdcSoi]);
 
   // Reset data when map changes to prevent showing stale data
   useEffect(() => {
@@ -3322,6 +3333,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
   }, [contextMenu]);
 
   const handleCellMouseDown = (displayRow: number, displayCol: number, e: React.MouseEvent) => {
+    if (isAtdcVirtual) return;
     e.preventDefault();
     // Convert display coords (from DOM event) into mapValues coords so
     // selectedCells / dragStart / etc. stay in the same space as mapValues.
@@ -3583,6 +3595,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
 
   // Handlers pour la sélection des cellules d'axes X
   const handleXAxisMouseDown = (index: number, e: React.MouseEvent) => {
+    if (isAtdcVirtual) return;
     e.preventDefault();
 
     // Clic droit: ne pas modifier la sélection si la cellule est déjà sélectionnée
@@ -3630,6 +3643,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
 
   // Handlers pour la sélection des cellules d'axes Y
   const handleYAxisMouseDown = (index: number, e: React.MouseEvent) => {
+    if (isAtdcVirtual) return;
     e.preventDefault();
 
     // Clic droit: ne pas modifier la sélection si la cellule est déjà sélectionnée
@@ -3792,11 +3806,13 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
   // displayXAxisToSource / displayYAxisToSource pour éditer le bon axe au bon
   // index source (transpose + miroirs pris en compte).
   const handleEditDisplayXAxis = (displayCol: number) => {
+    if (isAtdcVirtual) return;
     const tgt = displayXAxisToSource(displayCol);
     if (tgt.axis === 'x') handleEditXAxisLabel(tgt.index, xAxisLabels[tgt.index]);
     else handleEditYAxisLabel(tgt.index, yAxisLabels[tgt.index]);
   };
   const handleEditDisplayYAxis = (displayRow: number) => {
+    if (isAtdcVirtual) return;
     const tgt = displayYAxisToSource(displayRow);
     if (tgt.axis === 'x') handleEditXAxisLabel(tgt.index, xAxisLabels[tgt.index]);
     else handleEditYAxisLabel(tgt.index, yAxisLabels[tgt.index]);
@@ -4076,6 +4092,24 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
           <span className="text-[11px] pl-[10px] whitespace-nowrap flex-shrink-0" style={{ color: theme === 'light' ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.6)' }}>
             {displayXAxisLabels.length}x{displayYAxisLabels.length}
           </span>
+          {isAtdcVirtual && (
+            <label className="flex items-center gap-1 ml-1 pl-2 text-[10px] whitespace-nowrap" onMouseDown={(e) => e.stopPropagation()}>
+              <span style={{ color: theme === 'light' ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.55)' }}>SOI</span>
+              <select
+                value={atdcSoi}
+                onChange={(e) => setAtdcSoi(Number(e.target.value))}
+                className="h-5 rounded px-1 text-[10px] outline-none"
+                style={{
+                  background: theme === 'light' ? '#ffffff' : '#171a22',
+                  color: theme === 'light' ? '#111827' : '#ffffff',
+                  border: '1px solid rgba(168,85,247,.45)'
+                }}
+              >
+                {[90, 80, 70, 60, 50].map((v) => <option key={v} value={v}>{v}°</option>)}
+              </select>
+              <span className="px-1 py-0.5 rounded bg-violet-500/15 text-violet-300">ATDC = TI − SOI</span>
+            </label>
+          )}
           {onToggleInvertDisplay && (
             <button
               className={`h-6 w-6 p-0 flex items-center justify-center rounded flex-shrink-0 transition-all ${invertButtonActive ? 'bg-gradient-to-r from-red-600/50 via-red-500/50 to-orange-500/50 text-white border border-red-500/40 shadow-sm shadow-red-500/30' : 'hover:bg-white/10'}`}

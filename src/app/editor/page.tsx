@@ -152,6 +152,9 @@ interface MapData {
    *  dans le binaire (axe fixe d'un XDF). */
   x_axis_values?: number[] | null;
   y_axis_values?: number[] | null;
+  atdc_source_duration_address?: number;
+  atdc_soi_default?: number;
+  virtual_readonly?: boolean;
 }
 
 interface ProjectData {
@@ -1784,14 +1787,51 @@ function PreviewWindow({
 // Les patterns EDC15 du détecteur nomment les maps "Start of injection (SOI)…" ;
 // le sigle est retiré partout à l'affichage (projets existants inclus) en
 // normalisant les résultats de détection à leur entrée dans projectData.
-function stripSoiTag<T extends { maps?: { name?: string }[] } | null | undefined>(detectionResults: T): T {
+function stripSoiTag<T extends { maps?: any[] } | null | undefined>(detectionResults: T): T {
   if (!detectionResults || !Array.isArray(detectionResults.maps)) return detectionResults;
-  const maps = detectionResults.maps.map((m) =>
-    typeof m?.name === "string" && m.name.includes(" (SOI)") && !(m as { external_source?: string | null }).external_source
+
+  const baseMaps = detectionResults.maps.map((m: any) =>
+    typeof m?.name === "string" && m.name.includes(" (SOI)") && !m.external_source
       ? { ...m, name: m.name.replace(" (SOI)", "") }
       : m
   );
-  return { ...detectionResults, maps };
+
+  // Real editor maps: ATDC is derived from each TI1..TI5 duration map.
+  // Formula used by the Breizh Reprog editor: ATDC = TI - SOI.
+  const virtualAtdc: any[] = [];
+  let virtualIndex = 0;
+
+  for (const m of baseMaps) {
+    if (!m || m.external_source || !m.name || m.map_type === "atdc_virtual") continue;
+    const name = String(m.name);
+    if (/selector/i.test(name)) continue;
+
+    const match = name.match(/(?:injector\s+)?duration\s*0?([1-5])(?:\s|$)/i);
+    if (!match) continue;
+
+    const ti = Number(match[1]);
+    virtualIndex += 1;
+
+    virtualAtdc.push({
+      ...m,
+      id: `atdc-${m.address}-${ti}-${m.codeblock_id ?? "x"}`,
+      name: `ATDC TI${ti}`,
+      address: 0xE0000000 + virtualIndex,
+      map_type: "atdc_virtual",
+      virtual_readonly: true,
+      atdc_source_duration_address: m.address,
+      atdc_soi_default: 90,
+      category: "Injection system",
+      subcategory: "ATDC",
+      description: `Derived map: ATDC = TI - SOI | source: ${name}`,
+    });
+  }
+
+  return {
+    ...detectionResults,
+    maps: [...baseMaps, ...virtualAtdc],
+    total_maps: baseMaps.length + virtualAtdc.length,
+  };
 }
 
 function EditorPageContent() {

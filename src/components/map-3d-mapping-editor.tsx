@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Canvas, type ThreeEvent } from "@react-three/fiber";
 import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 
 interface Map3DMappingEditorProps {
@@ -66,27 +66,31 @@ function MappingPoint({
   position: [number, number, number];
   decimals: number;
   onSelect: (cell: { row: number; col: number }) => void;
-  onStartDrag: (event: PointerEvent) => void;
+  onStartDrag: (event: ThreeEvent<PointerEvent>) => void;
 }) {
   const t = maxValue === minValue ? 0.5 : (value - minValue) / (maxValue - minValue);
   return (
-    <mesh
-      position={position}
-      onPointerDown={(event) => {
-        event.stopPropagation();
-        event.nativeEvent.preventDefault();
-        onSelect({ row, col });
-        onStartDrag(event);
-      }}
-      onPointerOver={(event) => {
-        event.stopPropagation();
-        document.body.style.cursor = "grab";
-      }}
-      onPointerOut={() => {
-        document.body.style.cursor = "default";
-      }}
-    >
-      <sphereGeometry args={[selected ? 0.105 : 0.075, selected ? 18 : 12, selected ? 18 : 12]} />
+    <group position={position}>
+      {/* Hitbox volontairement plus large que le point visible. */}
+      <mesh
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          event.nativeEvent.preventDefault();
+          onSelect({ row, col });
+          onStartDrag(event);
+        }}
+        onPointerOver={(event) => {
+          event.stopPropagation();
+          document.body.style.cursor = "grab";
+        }}
+        onPointerOut={() => {
+          document.body.style.cursor = "default";
+        }}
+      >
+        <sphereGeometry args={[0.19, 14, 14]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+      <mesh>
       <meshStandardMaterial
         color={pointColor(clamp(t, 0, 1))}
         emissive={selected ? "#ffffff" : pointColor(clamp(t, 0, 1))}
@@ -94,6 +98,7 @@ function MappingPoint({
         roughness={0.35}
         metalness={0.15}
       />
+      </mesh>
       {selected && (
         <Html distanceFactor={9} position={[0, 0.18, 0]} center pointerEvents="none">
           <div className="rounded-md border border-violet-400/70 bg-black/75 px-2 py-1 text-[10px] font-mono text-white shadow-lg shadow-violet-500/20 whitespace-nowrap">
@@ -118,6 +123,8 @@ export function Map3DMappingEditor({
   theme = "default",
 }: Map3DMappingEditorProps) {
   const [dragging, setDragging] = useState(false);
+  const [step, setStep] = useState(1);
+  const [editText, setEditText] = useState("");
   const dragRef = useRef<{ row: number; col: number; startY: number; startValue: number } | null>(null);
 
   const effectiveMin = Number.isFinite(minValue) ? minValue : 0;
@@ -172,6 +179,30 @@ export function Map3DMappingEditor({
   const selectedPoint = selectedCell
     ? cells.find((cell) => cell.row === selectedCell.row && cell.col === selectedCell.col)
     : null;
+
+  useEffect(() => {
+    if (selectedPoint) setEditText(String(Number(selectedPoint.value.toFixed(decimals))));
+  }, [selectedPoint?.row, selectedPoint?.col, selectedPoint?.value, decimals]);
+
+  const applyExactValue = () => {
+    if (!selectedPoint) return;
+    const parsed = Number(editText.replace(",", "."));
+    if (!Number.isFinite(parsed)) return;
+    onChangeCell(
+      selectedPoint.row,
+      selectedPoint.col,
+      clamp(parsed, effectiveMin, effectiveMax),
+    );
+  };
+
+  const adjustSelected = (delta: number) => {
+    if (!selectedPoint) return;
+    onChangeCell(
+      selectedPoint.row,
+      selectedPoint.col,
+      clamp(selectedPoint.value + delta, effectiveMin, effectiveMax),
+    );
+  };
 
   const surfaceColor = theme === "light" ? "#eef2ff" : "#0f0b17";
   const gridColor = theme === "light" ? "#c4b5fd" : "#4c1d95";
@@ -258,6 +289,7 @@ export function Map3DMappingEditor({
           <axesHelper args={[2.3]} />
           <OrbitControls
             makeDefault
+            enabled={!dragging}
             enableDamping
             dampingFactor={0.08}
             minDistance={3.2}
@@ -267,13 +299,38 @@ export function Map3DMappingEditor({
         </group>
       </Canvas>
 
-      <div className="pointer-events-none absolute left-3 top-3 z-20 rounded-xl border border-violet-500/30 bg-black/55 px-3 py-2 text-[10px] text-white/75 backdrop-blur-md">
+      <div className="absolute left-3 top-3 z-20 w-[320px] rounded-xl border border-violet-500/30 bg-black/60 px-3 py-2 text-[10px] text-white/75 backdrop-blur-md">
         <div className="font-semibold text-violet-300">MAPPING 3D</div>
         <div>Clique un point · glisse verticalement pour monter/descendre</div>
-        <div className="opacity-55">Shift = x2 · Ctrl = précision fine</div>
+        <div className="opacity-55">Shift = x2 · Ctrl = précision fine · caméra bloquée pendant le drag</div>
         {selectedPoint && (
-          <div className="mt-1 font-mono text-white">
-            Cellule {selectedPoint.row + 1}:{selectedPoint.col + 1} · {selectedPoint.value.toFixed(decimals)}
+          <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2">
+            <div className="font-mono text-white mb-1">
+              Cellule {selectedPoint.row + 1}:{selectedPoint.col + 1} · {selectedPoint.value.toFixed(decimals)}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button type="button" className="rounded-md bg-white/10 px-2 py-1 font-bold hover:bg-white/20" onClick={() => adjustSelected(-step)}>−</button>
+              <button type="button" className="rounded-md bg-white/10 px-2 py-1 font-bold hover:bg-white/20" onClick={() => adjustSelected(step)}>+</button>
+              <span className="text-white/40 ml-1">pas</span>
+              <input
+                value={step}
+                onChange={(e) => {
+                  const v = Number(e.target.value.replace(",", "."));
+                  if (Number.isFinite(v) && v > 0) setStep(v);
+                }}
+                className="w-14 rounded-md border border-white/15 bg-black/30 px-1.5 py-1 text-center font-mono text-[10px] text-white outline-none"
+                inputMode="decimal"
+              />
+              <input
+                value={editText}
+                onChange={(e) => setEditText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") applyExactValue(); }}
+                className="ml-auto w-24 rounded-md border border-violet-400/30 bg-black/30 px-1.5 py-1 text-right font-mono text-[10px] text-white outline-none"
+                inputMode="decimal"
+                aria-label="Valeur exacte"
+              />
+              <button type="button" className="rounded-md bg-violet-600/70 px-2 py-1 font-semibold text-white hover:bg-violet-500" onClick={applyExactValue}>OK</button>
+            </div>
           </div>
         )}
       </div>

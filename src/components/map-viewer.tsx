@@ -3991,47 +3991,42 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         }
       }
     } else {
-      // Cas 2D : on ancre le contour, puis on applique plusieurs passes
-      // d'un filtre bilinéaire/gaussien. C'est beaucoup plus stable que la
-      // simple moyenne des 4 voisins utilisée auparavant.
-      const kernel = [
-        [1, 2, 1],
-        [2, 4, 2],
-        [1, 2, 1],
-      ];
-      const isInterior = (row: number, col: number) =>
-        selected.has(row + '-' + col) &&
-        selected.has((row - 1) + '-' + col) &&
-        selected.has((row + 1) + '-' + col) &&
-        selected.has(row + '-' + (col - 1)) &&
-        selected.has(row + '-' + (col + 1));
+      // Cas 2D : lissage façon éditeur de cartographie.
+      // On travaille sur TOUTE la sélection (pas uniquement l'intérieur),
+      // avec les 8 voisins sélectionnés et plusieurs passes successives.
+      // Cela évite l'impression que "Smooth Selection" ne fait presque rien
+      // sur les bords d'un bloc, et fonctionne aussi sur une sélection irrégulière.
+      const neighbors = [
+        [-1, -1, 1], [0, -1, 2], [1, -1, 1],
+        [-1,  0, 2], [0,  0, 3], [1,  0, 2],
+        [-1,  1, 1], [0,  1, 2], [1,  1, 1],
+      ] as const;
 
-      // 4 passes donnent un lissage nettement plus proche d'un outil de
-      // smoothing de carto, tout en gardant les bords de la sélection fixes.
-      for (let pass = 0; pass < 4; pass++) {
+      // 8 passes avec une forte pondération du résultat filtré : assez
+      // puissant pour obtenir une courbe/surface régulière, sans écraser
+      // brutalement les écarts de valeur.
+      for (let pass = 0; pass < 8; pass++) {
         const next = working.map((row) => [...row]);
 
-        for (let row = minRow + 1; row < maxRow; row++) {
-          for (let col = minCol + 1; col < maxCol; col++) {
-            if (!isInterior(row, col)) continue;
+        for (const [row, col] of cells) {
+          let weightedSum = 0;
+          let weightSum = 0;
 
-            let weightedSum = 0;
-            let weightSum = 0;
-            for (let ky = -1; ky <= 1; ky++) {
-              for (let kx = -1; kx <= 1; kx++) {
-                const value = working[row + ky]?.[col + kx];
-                const weight = kernel[ky + 1][kx + 1];
-                if (typeof value === 'number' && Number.isFinite(value)) {
-                  weightedSum += value * weight;
-                  weightSum += weight;
-                }
-              }
-            }
+          for (const [dr, dc, weight] of neighbors) {
+            const nr = row + dr;
+            const nc = col + dc;
+            if (!selected.has(nr + '-' + nc)) continue;
+            const value = working[nr]?.[nc];
+            if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+            weightedSum += value * weight;
+            weightSum += weight;
+          }
 
-            if (weightSum > 0) {
-              const filtered = weightedSum / weightSum;
-              next[row][col] = clampValue(Math.round(working[row][col] * 0.25 + filtered * 0.75));
-            }
+          if (weightSum > 0) {
+            const filtered = weightedSum / weightSum;
+            next[row][col] = clampValue(
+              Math.round(working[row][col] * 0.15 + filtered * 0.85)
+            );
           }
         }
 

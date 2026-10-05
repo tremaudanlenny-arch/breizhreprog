@@ -6448,6 +6448,15 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         type="button"
         onClick={() => {
           setToolsMenuOpen(false);
+          const duration = atdcSourceMaps[0];
+          const soi = atdcSoiMaps.find((m) =>
+            /start\s+of\s+injection\s+90(?:°C?|\s|$)/i.test(m.name || "")
+          ) || atdcSoiMaps[0];
+          // The calculator consumes the same live snapshots as the editor.
+          // Open the default source maps automatically so the tool is usable
+          // immediately instead of showing an empty calculator.
+          if (duration) handleMapClick(duration);
+          if (soi) handleMapClick(soi);
           setInjectionCalculatorOpen(true);
         }}
         className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
@@ -6818,6 +6827,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     sourceXAxisLabels: string[];
     sourceYAxisLabels: string[];
     sourceMapValues: number[][];
+    isAtdcVirtual?: boolean;
     xAxisLabel: string;
     yAxisLabel: string;
     mapName: string;
@@ -8621,6 +8631,10 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
             };
 
             setAtdcToolOpen(false);
+
+            // Keep the Duration source visibly open so its edited values feed
+            // the live ATDC snapshot stream immediately.
+            handleMapClick(source);
 
             setOpenMaps((prev) => {
               const withoutExisting = prev.filter((m) => m.address !== virtualMap.address);

@@ -5574,7 +5574,6 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
                           onRelayout={handlePlotlyRelayout}
                         />
                       </div>
-                      </div>
                     ) : (
                       <Plot
                         key={`3d-easyview-${mapData.address}`}

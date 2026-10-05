@@ -85,6 +85,7 @@ import {
 } from "@/lib/map-display-prefs";
 import { ConfirmModal } from "@/components/confirm-modal";
 import { AtdcToolModal } from "@/components/atdc-tool-modal";
+import { InjectionCalculatorModal, type InjectionApplyResult } from "@/components/injection-calculator-modal";
 import { PromptModal } from "@/components/prompt-modal";
 import { correctChecksumByEcuType, isChecksumSupported, ChecksumResult } from "@/lib/ecu/bosch/checksums";
 import { disableDTC, enableDTC, detectDTCs, type DetectedDTC, type CodeblockInfo } from "@/lib/ecu/bosch/dtc";
@@ -2111,6 +2112,7 @@ function EditorPageContent() {
   const [atdcToolOpen, setAtdcToolOpen] = useState(false);
   const [atdcSelectedSource, setAtdcSelectedSource] = useState<MapData | null>(null);
   const [atdcToolSoi, setAtdcToolSoi] = useState(90);
+  const [injectionCalculatorOpen, setInjectionCalculatorOpen] = useState(false);
 
 
   // Store global pour les modifications de toutes les maps (persist même après fermeture des fenêtres)
@@ -2345,6 +2347,10 @@ function EditorPageContent() {
     plot3DData: any[];
     xAxisLabels: string[];
     yAxisLabels: string[];
+    mapValues: number[][];
+    xAxisLabel: string;
+    yAxisLabel: string;
+    mapName: string;
     canShow3D: boolean;
   }>>(new Map());
 
@@ -4683,6 +4689,40 @@ function EditorPageContent() {
     });
   }, []);
 
+  const handleInjectionCalculatorApply = useCallback((result: InjectionApplyResult) => {
+    let changedCount = 0;
+    setAllMapModifications((prev) => {
+      const next = new Map(prev);
+      result.changes.forEach((changes, address) => {
+        const merged = { ...(prev.get(address) || {}), ...changes };
+        next.set(address, merged);
+        changedCount += Object.keys(changes).length;
+      });
+      return next;
+    });
+
+    if (result.axisChanges.size > 0) {
+      setMapAxisLabels((prev) => {
+        const next = new Map(prev);
+        result.axisChanges.forEach((axes, address) => {
+          const old = prev.get(address) || {};
+          next.set(address, {
+            x: axes.x !== undefined ? axes.x : old.x,
+            y: axes.y !== undefined ? axes.y : old.y,
+          });
+        });
+        return next;
+      });
+    }
+
+    setHasUnsavedChanges(true);
+    setInjectionCalculatorOpen(false);
+    toast({
+      title: "Calculateur Injection",
+      description: String(changedCount) + " cellule(s) calculée(s) et prêtes à être enregistrées.",
+    });
+  }, [toast]);
+
   /** Binaire et modifications de la version ouverte, tels qu'en mémoire
    *  (enregistrés ou non) — même forme que les édits du store, pour que la
    *  fenêtre de puissance calcule exactement ce que l'éditeur affiche. */
@@ -6308,6 +6348,17 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         type="button"
         onClick={() => {
           setToolsMenuOpen(false);
+          setInjectionCalculatorOpen(true);
+        }}
+        className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+      >
+        <Zap className="w-4 h-4 text-fuchsia-400" />
+        <span className="text-sm">Calculateur Injection</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setToolsMenuOpen(false);
           setShortcutHelpOpen(true);
         }}
         className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
@@ -6663,6 +6714,10 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     plot3DData: any[];
     xAxisLabels: string[];
     yAxisLabels: string[];
+    mapValues: number[][];
+    xAxisLabel: string;
+    yAxisLabel: string;
+    mapName: string;
     canShow3D: boolean;
   }) => {
     mapPlot3DDataRef.current.set(mapAddress, data);
@@ -8475,6 +8530,17 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
             setActiveMapAddress(virtualMap.address);
           }}
           onClose={() => setAtdcToolOpen(false)}
+        />
+      )}
+
+      {injectionCalculatorOpen && (
+        <InjectionCalculatorModal
+          theme={theme}
+          durationMaps={atdcSourceMaps}
+          soiMaps={atdcSoiMaps}
+          snapshots={mapPlot3DDataRef.current}
+          onApply={handleInjectionCalculatorApply}
+          onClose={() => setInjectionCalculatorOpen(false)}
         />
       )}
 

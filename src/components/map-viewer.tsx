@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useMemo, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { X, Repeat2, SlidersHorizontal } from "lucide-react";
+import { X, Repeat2, SlidersHorizontal, Pencil } from "lucide-react";
 import axios from "axios";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/contexts/theme-context";
@@ -648,6 +648,12 @@ export function MapViewer({
   const [atdcThreshold, setAtdcThreshold] = useState(0);
   const [atdcSaturation, setAtdcSaturation] = useState(1);
   const [atdcContrast, setAtdcContrast] = useState(1);
+  // Mapping 3D : un clic sur la surface sélectionne directement la cellule
+  // correspondante. Les commandes d'édition clavier existantes (+/-,
+  // flèches, Ctrl+C/V, etc.) restent donc utilisables sans créer un second
+  // moteur d'édition.
+  const [mapping3DMode, setMapping3DMode] = useState(false);
+  const [selected3DCell, setSelected3DCell] = useState<{ row: number; col: number } | null>(null);
   const atdcSkipPersistRef = useRef(false);
   const atdcRenderStorageKey = useMemo(
     () => "breizhreprog-atdc-render:" + encodeURIComponent(projectName || "default") + ":" + encodeURIComponent(fileName || "default") + ":" + mapData.address.toString(16) + ":" + atdcSoi,
@@ -1741,6 +1747,91 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     }
   };
 
+  // Convertit un événement Plotly 3D en coordonnées d'affichage de la map.
+  // Plotly retourne la ligne après l'éventuel retournement Y utilisé pour la
+  // scène 3D, puis on repasse par toMapCoords() pour écrire dans la bonne cellule.
+  const get3DDisplayCell = (event: any): { row: number; col: number } | null => {
+    const point = event?.points?.find((p: any) => p?.curveNumber === 0) ?? event?.points?.[0];
+    if (!point) return null;
+    const pointNumber = point.pointNumber;
+    let plotRow = Array.isArray(pointNumber) ? Number(pointNumber[0]) : Number(point.y);
+    let plotCol = Array.isArray(pointNumber) ? Number(pointNumber[1]) : Number(point.x);
+    if (!Number.isInteger(plotRow) || !Number.isInteger(plotCol)) return null;
+    if (plotRow < 0 || plotCol < 0) return null;
+
+    const needsYReverse =
+      displayYAxisLabels.length > 0 &&
+      parseFloat(displayYAxisLabels[0]) > parseFloat(displayYAxisLabels[displayYAxisLabels.length - 1]);
+
+    const displayRow = needsYReverse
+      ? displayMapValues.length - 1 - plotRow
+      : plotRow;
+    const displayCol = plotCol;
+
+    if (
+      displayRow < 0 ||
+      displayRow >= displayMapValues.length ||
+      displayCol < 0 ||
+      displayCol >= (displayMapValues[displayRow]?.length ?? 0)
+    ) return null;
+
+    return { row: displayRow, col: displayCol };
+  };
+
+  const handlePlot3DClick = (event: any) => {
+    if (!mapping3DMode || isAtdcVirtual) return;
+    const cell = get3DDisplayCell(event);
+    if (!cell) return;
+
+    const mapped = toMapCoords(cell.row, cell.col);
+    const key = getCellKey(mapped.row, mapped.col);
+    keyboardCursorRef.current = { row: cell.row, col: cell.col };
+    setSelected3DCell(cell);
+    setSelectedXAxisCells(new Set());
+    setSelectedYAxisCells(new Set());
+    setSelectedCells(new Set([key]));
+  };
+
+  const handlePlot3DDoubleClick = (event: any) => {
+    if (!mapping3DMode || isAtdcVirtual) return;
+    const cell = get3DDisplayCell(event);
+    if (!cell) return;
+    const value = displayMapValues[cell.row]?.[cell.col];
+    if (value === undefined) return;
+    handlePromptEdit(cell.row, cell.col, value);
+  };
+
+  const plot3DRenderData = useMemo(() => {
+    if (!mapping3DMode || !selected3DCell) return plot3DData;
+    const needsYReverse =
+      displayYAxisLabels.length > 0 &&
+      parseFloat(displayYAxisLabels[0]) > parseFloat(displayYAxisLabels[displayYAxisLabels.length - 1]);
+    const plotRow = needsYReverse
+      ? displayMapValues.length - 1 - selected3DCell.row
+      : selected3DCell.row;
+    const plotCol = selected3DCell.col;
+    const value = displayMapValues[selected3DCell.row]?.[plotCol];
+    if (value === undefined) return plot3DData;
+
+    return [
+      ...plot3DData,
+      {
+        x: [plotCol],
+        y: [plotRow],
+        z: [value],
+        type: "scatter3d" as const,
+        mode: "markers" as const,
+        marker: {
+          size: 7,
+          color: "#ffffff",
+          line: { color: "#7c3aed", width: 3 },
+        },
+        hovertemplate: "Cellule sélectionnée<br>Valeur: %{z:.2f}<extra></extra>",
+        showlegend: false,
+      },
+    ];
+  }, [plot3DData, mapping3DMode, selected3DCell, displayYAxisLabels, displayMapValues]);
+
   // Zoom programmatique (boutons +/− de l'EasyView) : on rapproche ou on
   // éloigne l'œil du centre de la scène, à partir de la DERNIÈRE position
   // utilisateur (savedCameraPositions, mise à jour à chaque rotation). Le
@@ -1904,6 +1995,21 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       });
     }
   }, [selectedCells, mapData.name, mapData.address, mapData.size, mapValues, onSelectionChange]);
+
+  // Synchroniser le marqueur 3D avec la sélection clavier (flèches / Ctrl+flèches).
+  useEffect(() => {
+    if (!mapping3DMode) {
+      setSelected3DCell(null);
+      return;
+    }
+    const first = Array.from(selectedCells)[0];
+    if (!first) {
+      setSelected3DCell(null);
+      return;
+    }
+    const [mapRow, mapCol] = first.split("-").map(Number);
+    setSelected3DCell(toDisplayCoords(mapRow, mapCol));
+  }, [mapping3DMode, selectedCells, displayMapValues.length, displayMapValues[0]?.length, displayTransposed, displayRowsFlipped, displayColsFlipped]);
 
   // Gestionnaires de raccourcis clavier pour + et -
   // Ne réagir que si cette map est active (au premier plan)
@@ -4407,9 +4513,32 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
           ) : (
             <div className="absolute inset-0 w-full h-full">
               {/* @ts-ignore */}
+              <div className="absolute top-2 right-2 z-30 flex items-center gap-1 rounded-lg p-1" style={{ background: theme === 'light' ? 'rgba(255,255,255,.84)' : 'rgba(20,23,32,.86)', border: `1px solid ${getCellBorderColor()}`, backdropFilter: 'blur(10px)' }}>
+  <button
+    type="button"
+    disabled={isAtdcVirtual}
+    onClick={() => {
+      if (isAtdcVirtual) return;
+      setMapping3DMode((enabled) => !enabled);
+    }}
+    className="px-2.5 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-colors"
+    style={{
+      background: mapping3DMode ? 'linear-gradient(90deg, #7c3aed, #a855f7)' : getViewButtonBg(),
+      color: mapping3DMode || theme !== 'light' ? '#ffffff' : '#111827',
+      opacity: isAtdcVirtual ? 0.45 : 1,
+    }}
+    title={isAtdcVirtual ? "ATDC est en lecture seule" : "Activer le mapping 3D"}
+  >
+    <Pencil className="w-3.5 h-3.5" />
+    {mapping3DMode ? "Mapping 3D actif" : "Mapper en 3D"}
+  </button>
+  {mapping3DMode && !isAtdcVirtual && (
+    <span className="text-[10px] px-1.5 opacity-70">Clic = sélectionner · double-clic = valeur</span>
+  )}
+</div>
               <Plot
                 key={`3d-${mapData.address}`}
-                data={plot3DData}
+                data={plot3DRenderData}
                 layout={{
                   paper_bgcolor: "transparent",
                   plot_bgcolor: "transparent",
@@ -4458,7 +4587,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
                 }}
                 style={{ width: "100%", height: "100%" }}
                 useResizeHandler={true}
-                onRelayout={handlePlotlyRelayout}
+                onClick={handlePlot3DClick}\n                      onDoubleClick={handlePlot3DDoubleClick}\n                      onRelayout={handlePlotlyRelayout}
               />
             </div>
             )}
@@ -5073,6 +5202,29 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
                 {canShow3D ? (
                   /* Afficher vue 3D */
                   <div className="w-full h-full relative">
+                    <div className="absolute top-2 right-2 z-30 flex items-center gap-1 rounded-lg p-1" style={{ background: theme === 'light' ? 'rgba(255,255,255,.84)' : 'rgba(20,23,32,.86)', border: `1px solid ${getCellBorderColor()}`, backdropFilter: 'blur(10px)' }}>
+  <button
+    type="button"
+    disabled={isAtdcVirtual}
+    onClick={() => {
+      if (isAtdcVirtual) return;
+      setMapping3DMode((enabled) => !enabled);
+    }}
+    className="px-2.5 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-colors"
+    style={{
+      background: mapping3DMode ? 'linear-gradient(90deg, #7c3aed, #a855f7)' : getViewButtonBg(),
+      color: mapping3DMode || theme !== 'light' ? '#ffffff' : '#111827',
+      opacity: isAtdcVirtual ? 0.45 : 1,
+    }}
+    title={isAtdcVirtual ? "ATDC est en lecture seule" : "Activer le mapping 3D"}
+  >
+    <Pencil className="w-3.5 h-3.5" />
+    {mapping3DMode ? "Mapping 3D actif" : "Mapper en 3D"}
+  </button>
+  {mapping3DMode && !isAtdcVirtual && (
+    <span className="text-[10px] px-1.5 opacity-70">Clic = sélectionner · double-clic = valeur</span>
+  )}
+</div>
                     <Plot
                       key={`3d-easyview-${mapData.address}`}
                       data={plot3DData}

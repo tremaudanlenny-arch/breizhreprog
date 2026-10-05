@@ -35,6 +35,7 @@ import {
   FileUp,
   Calculator,
   Keyboard,
+  Zap,
 } from "lucide-react";
 import { PiHeadCircuit } from "react-icons/pi";
 import { HexdumpViewer, type MapRegion } from "@/components/hexdump-viewer";

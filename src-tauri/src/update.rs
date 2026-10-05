@@ -8,17 +8,17 @@
 //
 // Publishing a release = create a GitHub release tagged `vX.Y.Z` with the
 // installers attached as assets:
-//  - Windows: `ZedSuite_X.Y.Z_x64-setup.exe` AND `ZedSuite_X.Y.Z_x86-setup.exe`
+//  - Windows: `BreizhReprog_X.Y.Z_x64-setup.exe` AND `BreizhReprog_X.Y.Z_x86-setup.exe`
 //    (32-bit). Upload the x64 one FIRST: the 1.0.0 x64 clients shipped with
 //    an arch-blind picker that takes the first *setup* .exe of the list.
 //    The updater downloads the asset matching its own architecture into the
 //    temp dir, launches it and exits the app.
-//  - macOS: `ZedSuite_X.Y.Z_macos-universal.dmg` for a first install and
-//    `ZedSuite_X.Y.Z_macos-universal.app.tar.gz` for the updater, which
+//  - macOS: `BreizhReprog_X.Y.Z_macos-universal.dmg` for a first install and
+//    `BreizhReprog_X.Y.Z_macos-universal.app.tar.gz` for the updater, which
 //    extracts the archive, swaps the `.app` in place and relaunches it (see
 //    the `macos` module below).
-//  - Linux: `ZedSuite_X.Y.Z_linux-x86_64.AppImage` and
-//    `ZedSuite_X.Y.Z_linux-amd64.deb`. An AppImage replaces its own file and
+//  - Linux: `BreizhReprog_X.Y.Z_linux-x86_64.AppImage` and
+//    `BreizhReprog_X.Y.Z_linux-amd64.deb`. An AppImage replaces its own file and
 //    relaunches; a `.deb` install hands the new package to apt through the
 //    system password prompt (pkexec), then relaunches (see the `linux`
 //    module below).
@@ -27,7 +27,7 @@ use serde::Serialize;
 use std::io::Write;
 use tauri::Emitter;
 
-const GITHUB_REPO: &str = "LeZed97/ZedSuite";
+const GITHUB_REPO: &str = "tremaudanlenny-arch/breizhreprog";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct UpdateInfo {
@@ -245,7 +245,7 @@ fn http_client() -> Result<reqwest::Client, String> {
 /// traductions ROADMAP.<fr|es|it|de>.md, lues sur GitHub (branche master)
 /// pour être à jour sans nouvelle version ; copies embarquées à la
 /// compilation en repli hors ligne. Affichée dans la langue de l'app.
-const ROADMAP_RAW_BASE: &str = "https://raw.githubusercontent.com/LeZed97/ZedSuite/master/";
+const ROADMAP_RAW_BASE: &str = "https://raw.githubusercontent.com/tremaudanlenny-arch/breizhreprog/master/";
 
 fn roadmap_file_name(lang: &str) -> &'static str {
     match lang.to_ascii_lowercase().as_str() {
@@ -317,7 +317,7 @@ pub async fn check_for_update(app: tauri::AppHandle) -> Result<UpdateInfo, Strin
     let url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases/latest");
     let res = http_client()?
         .get(&url)
-        .header("User-Agent", "ZedSuite-Updater")
+        .header("User-Agent", "BreizhReprog-Updater")
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
@@ -396,7 +396,7 @@ pub async fn download_and_install_update(
 
     let mut res = http_client()?
         .get(&url)
-        .header("User-Agent", "ZedSuite-Updater")
+        .header("User-Agent", "BreizhReprog-Updater")
         .send()
         .await
         .map_err(|e| format!("download: {e}"))?;
@@ -413,9 +413,9 @@ pub async fn download_and_install_update(
     let file_name = plan.download_name(&safe_version);
     #[cfg(not(target_os = "linux"))]
     let file_name = if cfg!(target_os = "macos") {
-        format!("ZedSuite-update-{safe_version}.app.tar.gz")
+        format!("BreizhReprog-update-{safe_version}.app.tar.gz")
     } else {
-        format!("ZedSuite-setup-{safe_version}.exe")
+        format!("BreizhReprog-setup-{safe_version}.exe")
     };
     let path = std::env::temp_dir().join(file_name);
 
@@ -500,7 +500,7 @@ pub mod macos {
     use std::process::{Command, Stdio};
 
     /// Name of the app bundle inside the archive and in Applications.
-    pub const BUNDLE_NAME: &str = "ZedSuite.app";
+    pub const BUNDLE_NAME: &str = "Breizh Reprog.app";
     const STAGING_DIR: &str = ".ZedSuite-update";
     const BACKUP_DIR: &str = ".ZedSuite-previous.app";
 
@@ -801,9 +801,9 @@ pub mod linux {
         /// Temp file name of the download.
         pub fn download_name(&self, version: &str) -> String {
             if self.is_deb() {
-                format!("ZedSuite-update-{version}.deb")
+                format!("BreizhReprog-update-{version}.deb")
             } else {
-                format!("ZedSuite-update-{version}.AppImage")
+                format!("BreizhReprog-update-{version}.AppImage")
             }
         }
     }

@@ -522,6 +522,7 @@ interface MapViewerProps {
     selectedCells: Array<{ row: number; col: number; address: number; value: number }>;
   } | null) => void;
   // Callback pour partager les données 3D avec le parent (pour Preview window)
+  onChangeMapCells?: (mapAddress: number, changes: Array<{ row: number; col: number; value: number }>) => void;
   onPlot3DDataChange?: (mapAddress: number, data: {
     plot3DData: any[];
     xAxisLabels: string[];
@@ -629,6 +630,7 @@ export function MapViewer({
   theme: themeProp,
   onResizeActiveChange,
   onSelectionChange,
+  onChangeMapCells,
   onPlot3DDataChange,
   liveMapSnapshots,
   liveSnapshotVersion = 0,
@@ -3784,6 +3786,30 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     });
   };
 
+  const updateDisplayCells = useCallback((changes: Array<{ row: number; col: number; value: number }>) => {
+    if (isAtdcVirtual || !changes.length) return;
+    const normalized = changes.map((change) => ({
+      ...change,
+      value: clampValue(change.value),
+    }));
+    setMapValues((prev) => {
+      const next = prev.map((row) => [...row]);
+      normalized.forEach(({ row, col, value }) => {
+        if (next[row]?.[col] !== undefined) next[row][col] = value;
+      });
+      return next;
+    });
+    setChangedCells((prev) => {
+      const next = { ...prev };
+      normalized.forEach(({ row, col, value }) => {
+        const key = `${row}-${col}`;
+        const original = originalValuesRef.current?.[row]?.[col];
+        if (original !== undefined && Math.abs(original - value) < 1e-6) delete next[key];
+        else next[key] = value;
+      });
+      return next;
+    });
+  }, [isAtdcVirtual]);
   const updateDisplayCellValue = useCallback((displayRow: number, displayCol: number, value: number) => {
     const mapped = toMapCoords(displayRow, displayCol);
     updateCellValue(mapped.row, mapped.col, value);
@@ -4600,6 +4626,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
                     setSelectedCells(new Set([key]));
                   }}
                   onChangeCell={updateDisplayCellValue}
+                  onChangeCells={updateDisplayCells}
                   xLabels={displayXAxisLabels}
                   yLabels={displayYAxisLabels}
                   decimals={cellDecimals}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { Canvas } from "@react-three/fiber";
 import { Grid, Html, Line, OrbitControls } from "@react-three/drei";
 
@@ -65,7 +65,7 @@ function MappingPoint({
   position: [number, number, number];
   decimals: number;
   onSelect: (cell: { row: number; col: number }) => void;
-  onStartDrag: (event: React.PointerEvent) => void;
+  onStartDrag: (event: PointerEvent) => void;
 }) {
   const t = maxValue === minValue ? 0.5 : (value - minValue) / (maxValue - minValue);
   return (

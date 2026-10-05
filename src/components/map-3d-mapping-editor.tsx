@@ -56,6 +56,8 @@ function MappingPoint({
   decimals,
   onSelect,
   onStartDrag,
+  onHover,
+  onLeave,
 }: {
   row: number;
   col: number;
@@ -66,46 +68,74 @@ function MappingPoint({
   position: [number, number, number];
   decimals: number;
   onSelect: (cell: { row: number; col: number }) => void;
-  onStartDrag: (event: ThreeEvent<PointerEvent>) => void;
+  onStartDrag: (event: ThreeEvent<PointerEvent>, cell: { row: number; col: number }) => void;
+  onHover: () => void;
+  onLeave: () => void;
 }) {
   const t = maxValue === minValue ? 0.5 : (value - minValue) / (maxValue - minValue);
+  const color = pointColor(clamp(t, 0, 1));
+
   return (
     <group position={position}>
-      {/* Hitbox volontairement plus large que le point visible. */}
+      {/* Gros volume de sélection, sans depth test : le point reste cliquable
+          même quand la surface ou la grille passe devant à l'écran. */}
       <mesh
-        onPointerDown={(event) => {
+        renderOrder={1000}
+        onPointerDownCapture={(event) => {
+          if (event.button !== 0) return;
           event.stopPropagation();
           event.nativeEvent.preventDefault();
           onSelect({ row, col });
-          onStartDrag(event);
+          onStartDrag(event, { row, col });
         }}
         onPointerOver={(event) => {
           event.stopPropagation();
-          document.body.style.cursor = "grab";
+          onHover();
         }}
-        onPointerOut={() => {
-          document.body.style.cursor = "default";
+        onPointerOut={(event) => {
+          event.stopPropagation();
+          onLeave();
         }}
       >
-        <sphereGeometry args={[0.19, 14, 14]} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        <sphereGeometry args={[0.28, 18, 18]} />
+        <meshBasicMaterial transparent opacity={0.01} depthTest={false} depthWrite={false} />
       </mesh>
-      <mesh>
-        <sphereGeometry args={[selected ? 0.12 : 0.085, selected ? 18 : 12, selected ? 18 : 12]} />
+
+      {/* Poignée visible : elle est volontairement plus grosse que l'ancienne
+          bille pour qu'on puisse réellement "prendre" un point à la souris. */}
+      <mesh renderOrder={1001}>
+        <sphereGeometry args={[selected ? 0.14 : 0.105, selected ? 22 : 16, selected ? 22 : 16]} />
         <meshStandardMaterial
-          color={pointColor(clamp(t, 0, 1))}
-          emissive={selected ? "#ffffff" : pointColor(clamp(t, 0, 1))}
-          emissiveIntensity={selected ? 0.7 : 0.18}
-          roughness={0.35}
-          metalness={0.15}
+          color={color}
+          emissive={selected ? "#ffffff" : color}
+          emissiveIntensity={selected ? 1.2 : 0.3}
+          roughness={0.3}
+          metalness={0.1}
+          depthTest={false}
+          depthWrite={false}
         />
       </mesh>
+
       {selected && (
-        <Html distanceFactor={9} position={[0, 0.18, 0]} center pointerEvents="none">
-          <div className="rounded-md border border-violet-400/70 bg-black/75 px-2 py-1 text-[10px] font-mono text-white shadow-lg shadow-violet-500/20 whitespace-nowrap">
-            {value.toFixed(decimals)}
-          </div>
-        </Html>
+        <>
+          <Line
+            points={[
+              [0, 0, -position[2]],
+              [0, 0, 0],
+            ]}
+            color="#f0abfc"
+            lineWidth={2.5}
+          />
+          <mesh position={[0, 0, 0.02]} renderOrder={1002}>
+            <sphereGeometry args={[0.19, 20, 20]} />
+            <meshBasicMaterial color="#ffffff" transparent opacity={0.2} depthTest={false} depthWrite={false} />
+          </mesh>
+          <Html distanceFactor={9} position={[0, 0.23, 0]} center pointerEvents="none">
+            <div className="rounded-md border border-violet-400/70 bg-black/80 px-2 py-1 text-[10px] font-mono text-white shadow-lg shadow-violet-500/20 whitespace-nowrap">
+              {value.toFixed(decimals)}
+            </div>
+          </Html>
+        </>
       )}
     </group>
   );
@@ -127,10 +157,12 @@ export function Map3DMappingEditor({
   const [step, setStep] = useState(1);
   const [editText, setEditText] = useState("");
   const dragRef = useRef<{ row: number; col: number; startY: number; startValue: number } | null>(null);
+  const draggingRef = useRef(false);
+  const controlsRef = useRef<any>(null);
 
   const effectiveMin = Number.isFinite(minValue) ? minValue : 0;
   const effectiveMax = Number.isFinite(maxValue) && maxValue > effectiveMin ? maxValue : effectiveMin + 1;
-  const valueRange = effectiveMax - effectiveMin;
+  const valueRange = Math.max(effectiveMax - effectiveMin, 1e-9);
 
   const cells = useMemo(() => {
     const rows = values.length;
@@ -146,36 +178,65 @@ export function Map3DMappingEditor({
     );
   }, [values, effectiveMin, effectiveMax, valueRange]);
 
+  const endDrag = () => {
+    dragRef.current = null;
+    draggingRef.current = false;
+    setDragging(false);
+    if (controlsRef.current) controlsRef.current.enabled = true;
+    document.body.style.cursor = "default";
+  };
+
   useEffect(() => {
     if (!dragging) return;
 
     const move = (event: PointerEvent) => {
       const active = dragRef.current;
       if (!active) return;
+
       const dy = event.clientY - active.startY;
       let sensitivity = valueRange / 240;
       if (event.shiftKey) sensitivity *= 2;
       if (event.ctrlKey || event.metaKey) sensitivity *= 0.25;
+
       const nextValue = clamp(active.startValue - dy * sensitivity, effectiveMin, effectiveMax);
       onChangeCell(active.row, active.col, nextValue);
     };
 
-    const up = () => {
-      dragRef.current = null;
-      setDragging(false);
-      document.body.style.cursor = "default";
-    };
+    const up = () => endDrag();
+    const cancel = () => endDrag();
 
-    window.addEventListener("pointermove", move);
+    window.addEventListener("pointermove", move, { passive: true });
     window.addEventListener("pointerup", up, { once: true });
-    document.body.style.cursor = "ns-resize";
+    window.addEventListener("pointercancel", cancel, { once: true });
 
+    document.body.style.cursor = "ns-resize";
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", cancel);
       document.body.style.cursor = "default";
     };
   }, [dragging, effectiveMin, effectiveMax, onChangeCell, valueRange]);
+
+  const startDrag = (event: ThreeEvent<PointerEvent>, cell: { row: number; col: number }) => {
+    if (event.button !== 0) return;
+    const point = cells.find((candidate) => candidate.row === cell.row && candidate.col === cell.col);
+    if (!point) return;
+
+    draggingRef.current = true;
+    dragRef.current = {
+      row: point.row,
+      col: point.col,
+      startY: event.clientY,
+      startValue: point.value,
+    };
+
+    // Désactiver immédiatement OrbitControls via la ref, avant même que
+    // React ait le temps de rerendre avec enabled={false}.
+    if (controlsRef.current) controlsRef.current.enabled = false;
+    setDragging(true);
+    document.body.style.cursor = "ns-resize";
+  };
 
   const selectedPoint = selectedCell
     ? cells.find((cell) => cell.row === selectedCell.row && cell.col === selectedCell.col)
@@ -211,8 +272,8 @@ export function Map3DMappingEditor({
   return (
     <div
       className="relative h-full w-full overflow-hidden"
-      style={{ cursor: selectedPoint ? "default" : "default" }}
-      title={selectedPoint ? "Glisse verticalement pour monter ou descendre le point sélectionné" : "Clique un point pour le sélectionner"}
+      style={{ touchAction: "none" }}
+      title={selectedPoint ? "Glisse verticalement sur une poignée pour modifier la valeur" : "Clique une poignée pour la sélectionner"}
     >
       <Canvas
         camera={{ position: [7.5, -8, 6.4], fov: 42 }}
@@ -224,10 +285,11 @@ export function Map3DMappingEditor({
         <pointLight position={[-4, 2, 4]} intensity={1.2} color="#a855f7" />
 
         <group>
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -0.02]}>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -0.02]} renderOrder={0}>
             <planeGeometry args={[WORLD_WIDTH + 0.6, WORLD_DEPTH + 0.6]} />
             <meshBasicMaterial color={surfaceColor} transparent opacity={0.26} />
           </mesh>
+
           <Grid
             args={[WORLD_WIDTH, WORLD_DEPTH]}
             cellSize={Math.max(0.12, Math.min(0.55, WORLD_WIDTH / Math.max(values[0]?.length ?? 1, 1)))}
@@ -242,23 +304,6 @@ export function Map3DMappingEditor({
             position={[0, 0, 0]}
           />
 
-          {selectedPoint && (
-            <>
-              <Line
-                points={[
-                  [selectedPoint.position[0], selectedPoint.position[1], 0],
-                  selectedPoint.position,
-                ]}
-                color="#f0abfc"
-                lineWidth={2.5}
-              />
-              <mesh position={[selectedPoint.position[0], selectedPoint.position[1], selectedPoint.position[2]]}>
-                <sphereGeometry args={[0.15, 20, 20]} />
-                <meshBasicMaterial color="#ffffff" transparent opacity={0.2} />
-              </mesh>
-            </>
-          )}
-
           {cells.map((cell) => (
             <MappingPoint
               key={`${cell.row}-${cell.col}`}
@@ -271,24 +316,20 @@ export function Map3DMappingEditor({
               position={cell.position}
               decimals={decimals}
               onSelect={onSelectCell}
-              onStartDrag={(event) => {
-                if (event.button !== 0) return;
-                const point = cells.find((candidate) => candidate.row === cell.row && candidate.col === cell.col);
-                if (!point) return;
-                event.preventDefault();
-                dragRef.current = {
-                  row: point.row,
-                  col: point.col,
-                  startY: event.clientY,
-                  startValue: point.value,
-                };
-                setDragging(true);
+              onStartDrag={startDrag}
+              onHover={() => {
+                if (!draggingRef.current) document.body.style.cursor = "grab";
+              }}
+              onLeave={() => {
+                if (!draggingRef.current) document.body.style.cursor = "default";
               }}
             />
           ))}
 
           <axesHelper args={[2.3]} />
+
           <OrbitControls
+            ref={controlsRef}
             makeDefault
             enabled={!dragging}
             enableDamping
@@ -300,10 +341,11 @@ export function Map3DMappingEditor({
         </group>
       </Canvas>
 
-      <div className="absolute left-3 top-3 z-20 w-[320px] rounded-xl border border-violet-500/30 bg-black/60 px-3 py-2 text-[10px] text-white/75 backdrop-blur-md">
-        <div className="font-semibold text-violet-300">MAPPING 3D</div>
-        <div>Clique un point · glisse verticalement pour monter/descendre</div>
+      <div className="absolute left-3 top-3 z-20 w-[330px] rounded-xl border border-violet-500/30 bg-black/65 px-3 py-2 text-[10px] text-white/75 backdrop-blur-md">
+        <div className="font-semibold text-violet-300">MAPPING 3D — ÉDITION</div>
+        <div>Clique une poignée puis glisse ↑ / ↓ pour modifier la cellule.</div>
         <div className="opacity-55">Shift = x2 · Ctrl = précision fine · caméra bloquée pendant le drag</div>
+
         {selectedPoint && (
           <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2">
             <div className="font-mono text-white mb-1">
@@ -325,7 +367,9 @@ export function Map3DMappingEditor({
               <input
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter") applyExactValue(); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") applyExactValue();
+                }}
                 className="ml-auto w-24 rounded-md border border-violet-400/30 bg-black/30 px-1.5 py-1 text-right font-mono text-[10px] text-white outline-none"
                 inputMode="decimal"
                 aria-label="Valeur exacte"

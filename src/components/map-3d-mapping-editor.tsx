@@ -91,13 +91,14 @@ function MappingPoint({
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
       <mesh>
-      <meshStandardMaterial
-        color={pointColor(clamp(t, 0, 1))}
-        emissive={selected ? "#ffffff" : pointColor(clamp(t, 0, 1))}
-        emissiveIntensity={selected ? 0.7 : 0.18}
-        roughness={0.35}
-        metalness={0.15}
-      />
+        <sphereGeometry args={[selected ? 0.12 : 0.085, selected ? 18 : 12, selected ? 18 : 12]} />
+        <meshStandardMaterial
+          color={pointColor(clamp(t, 0, 1))}
+          emissive={selected ? "#ffffff" : pointColor(clamp(t, 0, 1))}
+          emissiveIntensity={selected ? 0.7 : 0.18}
+          roughness={0.35}
+          metalness={0.15}
+        />
       </mesh>
       {selected && (
         <Html distanceFactor={9} position={[0, 0.18, 0]} center pointerEvents="none">
@@ -106,7 +107,7 @@ function MappingPoint({
           </div>
         </Html>
       )}
-    </mesh>
+    </group>
   );
 }
 

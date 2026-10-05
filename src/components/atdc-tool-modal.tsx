@@ -10,6 +10,10 @@ export interface AtdcSourceMap {
   offset?: number;
   data_type?: string;
   is_little_endian?: boolean;
+  x_label?: string;
+  y_label?: string;
+  x_axis_values?: number[] | null;
+  y_axis_values?: number[] | null;
   dimensions?: {
     TwoDimensional?: { rows: number; cols: number };
     OneDimensional?: { length: number };

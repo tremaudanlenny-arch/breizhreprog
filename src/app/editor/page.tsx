@@ -7185,12 +7185,12 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
             <div data-tauri-drag-region className="relative inline-flex flex-col items-center gap-1">
               <img
                 src="/breizh-reprog-logo.svg"
-                alt="Breizh Reprog X Ninnin"
+                alt="Breizh Reprog X Ninnin Projet Perf"
                 data-tauri-drag-region
                 className="h-10 w-auto max-w-[210px] object-contain"
               />
               <span className="text-[11px] font-semibold tracking-wide" style={{ color: theme === 'light' ? 'rgba(0,0,0,0.72)' : 'rgba(255,255,255,0.82)' }}>
-                Breizh Reprog X Ninnin
+                Breizh Reprog X Ninnin Projet Perf
               </span>
             </div>
           </div>

@@ -6477,18 +6477,29 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     );
   }, [projectData?.detectionResults?.maps]);
 
+  const mafMaps = useMemo(() => {
+    const maps = projectData?.detectionResults?.maps ?? [];
+    return maps.filter((m) =>
+      !m.external_source &&
+      /(\bmaf\b|mass\s*air|air\s*mass|debit\s*d.?air|débit\s*d.?air|masse\s*d.?air)/i.test(m.name || "") &&
+      !/selector|egr|limp|diagnostic/i.test(m.name || "")
+    );
+  }, [projectData?.detectionResults?.maps]);
+
+
   // Source maps utilisées par ATDC / Injection. Elles sont montées dans un
   // moteur invisible dédié : l'utilisateur n'a PAS besoin d'ouvrir une
   // fenêtre Duration/SOI. MapViewer publie ainsi ses valeurs canoniques et
   // ses axes vers mapPlot3DDataRef même quand la map est fermée.
   const liveCalibrationMaps = useMemo(() => {
     const seen = new Set<number>();
-    return [...atdcSourceMaps, ...atdcSoiMaps].filter((map) => {
+    return [...atdcSourceMaps, ...atdcSoiMaps, ...mafMaps].filter((map) => {
       if (seen.has(map.address)) return false;
       seen.add(map.address);
       return true;
     });
-  }, [atdcSourceMaps, atdcSoiMaps]);
+  }, [atdcSourceMaps, atdcSoiMaps, mafMaps]);
+
 
   const renderToolsMenu = (placement: 'below' | 'side') => {
     const tools: Array<{ id: CalibrationMathTool; label: string; detail: string }> = [
@@ -8919,9 +8930,26 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
           theme={theme}
           tool={calibrationMathTool}
           durationMaps={atdcSourceMaps}
+          mafMaps={mafMaps}
           snapshots={mapPlot3DDataRef.current}
           selection={globalCursorInfo}
           onApplyRamp={handleCalibrationRampApply}
+          onApplyChanges={(mapAddress, changes) => {
+            if (!Object.keys(changes).length) return;
+            if (!restoringMapHistoryRef.current) {
+              pushMapEditHistory(allMapModifications, mapAxisLabels);
+            }
+            setAllMapModifications((prev) => {
+              const next = new Map(prev);
+              next.set(mapAddress, { ...(prev.get(mapAddress) || {}), ...changes });
+              return next;
+            });
+            setHasUnsavedChanges(true);
+            toast({
+              title: "Calculateur AFR",
+              description: String(Object.keys(changes).length) + " cellule(s) de Duration calculée(s).",
+            });
+          }}
           onClose={() => setCalibrationMathTool(null)}
         />
       )}

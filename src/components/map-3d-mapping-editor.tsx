@@ -11,6 +11,7 @@ interface Map3DMappingEditorProps {
   selectedCell: { row: number; col: number } | null;
   onSelectCell: (cell: { row: number; col: number }) => void;
   onChangeCell: (row: number, col: number, value: number) => void;
+  onChangeCells?: (changes: Array<{ row: number; col: number; value: number }>) => void;
   xLabels: string[];
   yLabels: string[];
   decimals?: number;
@@ -86,6 +87,13 @@ function MappingPoint({
           event.stopPropagation();
           event.nativeEvent.preventDefault();
           onSelect({ row, col });
+          setSelectedCells((previous) => {
+            const next = new Set(event.shiftKey ? previous : []);
+            const key = `${row}-${col}`;
+            if (event.shiftKey && next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
+          });
           onStartDrag(event, { row, col });
         }}
         onPointerOver={(event) => {
@@ -148,6 +156,7 @@ export function Map3DMappingEditor({
   selectedCell,
   onSelectCell,
   onChangeCell,
+  onChangeCells,
   xLabels,
   yLabels,
   decimals = 2,
@@ -156,6 +165,10 @@ export function Map3DMappingEditor({
   const [dragging, setDragging] = useState(false);
   const [step, setStep] = useState(1);
   const [editText, setEditText] = useState("");
+  const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
+  const [percentValue, setPercentValue] = useState(5);
+  const historyRef = useRef<number[][][]>([]);
+  const futureRef = useRef<number[][][]>([]);
   const dragRef = useRef<{ row: number; col: number; startY: number; startValue: number } | null>(null);
   const draggingRef = useRef(false);
   const controlsRef = useRef<any>(null);
@@ -238,6 +251,149 @@ export function Map3DMappingEditor({
     document.body.style.cursor = "ns-resize";
   };
 
+  const selectedKey = selectedCell ? `${selectedCell.row}-${selectedCell.col}` : null;
+  const effectiveSelection = useMemo(() => {
+    const next = new Set(selectedCells);
+    if (selectedKey) next.add(selectedKey);
+    return Array.from(next)
+      .map((key) => {
+        const [row, col] = key.split("-").map(Number);
+        return cells.find((cell) => cell.row === row && cell.col === col);
+      })
+      .filter(Boolean) as typeof cells;
+  }, [cells, selectedCells, selectedKey]);
+
+  const pushHistory = () => {
+    historyRef.current = [...historyRef.current.slice(-30), values.map((row) => [...row])];
+    futureRef.current = [];
+  };
+
+  const applyChanges = (changes: Array<{ row: number; col: number; value: number }>) => {
+    if (!changes.length) return;
+    pushHistory();
+    if (onChangeCells) {
+      onChangeCells(changes);
+      return;
+    }
+    changes.forEach((change) => onChangeCell(change.row, change.col, change.value));
+  };
+
+  const restoreSnapshot = (snapshot: number[][]) => {
+    const changes: Array<{ row: number; col: number; value: number }> = [];
+    values.forEach((row, r) => {
+      row.forEach((value, col) => {
+        const target = snapshot[r]?.[col];
+        if (Number.isFinite(target) && Math.abs(target - value) > 1e-9) {
+          changes.push({ row: r, col, value: target });
+        }
+      });
+    });
+    if (!changes.length) return;
+    if (onChangeCells) onChangeCells(changes);
+    else changes.forEach((change) => onChangeCell(change.row, change.col, change.value));
+  };
+
+  const undo = () => {
+    const previous = historyRef.current.pop();
+    if (!previous) return;
+    futureRef.current = [...futureRef.current.slice(-30), values.map((row) => [...row])];
+    restoreSnapshot(previous);
+  };
+
+  const redo = () => {
+    const next = futureRef.current.pop();
+    if (!next) return;
+    historyRef.current = [...historyRef.current.slice(-30), values.map((row) => [...row])];
+    restoreSnapshot(next);
+  };
+
+  const applySelectionOperation = (
+    operation: "add" | "subtract" | "percent" | "flatten" | "smooth" | "interpolate" | "slopeX" | "slopeY" | "mirrorX" | "mirrorY",
+  ) => {
+    if (!effectiveSelection.length) return;
+    const next = values.map((row) => [...row]);
+
+    if (operation === "flatten") {
+      const avg = effectiveSelection.reduce((sum, point) => sum + point.value, 0) / effectiveSelection.length;
+      effectiveSelection.forEach((point) => { next[point.row][point.col] = avg; });
+    } else if (operation === "interpolate") {
+      if (effectiveSelection.length < 2) return;
+      const ordered = [...effectiveSelection].sort((a, b) => (a.row - b.row) || (a.col - b.col));
+      const first = ordered[0].value;
+      const last = ordered[ordered.length - 1].value;
+      ordered.forEach((point, index) => {
+        const t = ordered.length === 1 ? 0 : index / (ordered.length - 1);
+        next[point.row][point.col] = first + (last - first) * t;
+      });
+    } else if (operation === "smooth") {
+      effectiveSelection.forEach((point) => {
+        let sum = 0;
+        let count = 0;
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            const rr = point.row + dr;
+            const cc = point.col + dc;
+            const value = values[rr]?.[cc];
+            if (Number.isFinite(value)) { sum += value; count++; }
+          }
+        }
+        if (count) next[point.row][point.col] = sum / count;
+      });
+    } else if (operation === "slopeX" || operation === "slopeY") {
+      const grouped = new Map<number, typeof effectiveSelection>();
+      effectiveSelection.forEach((point) => {
+        const key = operation === "slopeX" ? point.row : point.col;
+        const group = grouped.get(key) ?? [];
+        group.push(point);
+        grouped.set(key, group);
+      });
+      grouped.forEach((group) => {
+        const ordered = [...group].sort((a, b) => operation === "slopeX" ? a.col - b.col : a.row - b.row);
+        if (ordered.length < 2) return;
+        const first = ordered[0].value;
+        const last = ordered[ordered.length - 1].value;
+        ordered.forEach((point, index) => {
+          const t = index / (ordered.length - 1);
+          next[point.row][point.col] = first + (last - first) * t;
+        });
+      });
+    } else if (operation === "mirrorX" || operation === "mirrorY") {
+      const keys = new Set(effectiveSelection.map((point) => `${point.row}-${point.col}`));
+      effectiveSelection.forEach((point) => {
+        const targetRow = operation === "mirrorY"
+          ? Math.min(...effectiveSelection.filter((p) => p.col === point.col).map((p) => p.row))
+            + Math.max(...effectiveSelection.filter((p) => p.col === point.col).map((p) => p.row))
+            - point.row
+          : point.row;
+        const targetCol = operation === "mirrorX"
+          ? Math.min(...effectiveSelection.filter((p) => p.row === point.row).map((p) => p.col))
+            + Math.max(...effectiveSelection.filter((p) => p.row === point.row).map((p) => p.col))
+            - point.col
+          : point.col;
+        if (keys.has(`${targetRow}-${targetCol}`)) next[point.row][point.col] = values[targetRow]?.[targetCol] ?? point.value;
+      });
+    } else {
+      effectiveSelection.forEach((point) => {
+        const delta = operation === "add" ? step : operation === "subtract" ? -step : 0;
+        const multiplier = operation === "percent" ? 1 + percentValue / 100 : 1;
+        next[point.row][point.col] = clamp(
+          (point.value + delta) * multiplier,
+          effectiveMin,
+          effectiveMax,
+        );
+      });
+    }
+
+    const changes: Array<{ row: number; col: number; value: number }> = [];
+    effectiveSelection.forEach((point) => {
+      const value = clamp(next[point.row][point.col], effectiveMin, effectiveMax);
+      if (Math.abs(value - values[point.row][point.col]) > 1e-9) {
+        changes.push({ row: point.row, col: point.col, value });
+      }
+    });
+    applyChanges(changes);
+  };
+
   const selectedPoint = selectedCell
     ? cells.find((cell) => cell.row === selectedCell.row && cell.col === selectedCell.col)
     : null;
@@ -246,24 +402,50 @@ export function Map3DMappingEditor({
     if (selectedPoint) setEditText(String(Number(selectedPoint.value.toFixed(decimals))));
   }, [selectedPoint?.row, selectedPoint?.col, selectedPoint?.value, decimals]);
 
+  useEffect(() => {
+    setSelectedCells((previous) => {
+      const valid = new Set<string>();
+      previous.forEach((key) => {
+        const [row, col] = key.split("-").map(Number);
+        if (values[row]?.[col] !== undefined) valid.add(key);
+      });
+      return valid.size === previous.size ? previous : valid;
+    });
+  }, [values]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      if (event.key.toLowerCase() === "z" && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+      } else if (event.key.toLowerCase() === "y" || (event.key.toLowerCase() === "z" && event.shiftKey)) {
+        event.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   const applyExactValue = () => {
     if (!selectedPoint) return;
     const parsed = Number(editText.replace(",", "."));
     if (!Number.isFinite(parsed)) return;
-    onChangeCell(
-      selectedPoint.row,
-      selectedPoint.col,
-      clamp(parsed, effectiveMin, effectiveMax),
-    );
+    applyChanges([{
+      row: selectedPoint.row,
+      col: selectedPoint.col,
+      value: clamp(parsed, effectiveMin, effectiveMax),
+    }]);
   };
 
   const adjustSelected = (delta: number) => {
     if (!selectedPoint) return;
-    onChangeCell(
-      selectedPoint.row,
-      selectedPoint.col,
-      clamp(selectedPoint.value + delta, effectiveMin, effectiveMax),
-    );
+    applyChanges([{
+      row: selectedPoint.row,
+      col: selectedPoint.col,
+      value: clamp(selectedPoint.value + delta, effectiveMin, effectiveMax),
+    }]);
   };
 
   const surfaceColor = theme === "light" ? "#eef2ff" : "#0f0b17";
@@ -343,17 +525,18 @@ export function Map3DMappingEditor({
 
       <div className="absolute left-3 top-3 z-20 w-[330px] rounded-xl border border-violet-500/30 bg-black/65 px-3 py-2 text-[10px] text-white/75 backdrop-blur-md">
         <div className="font-semibold text-violet-300">MAPPING 3D — ÉDITION</div>
-        <div>Clique une poignée puis glisse ↑ / ↓ pour modifier la cellule.</div>
-        <div className="opacity-55">Shift = x2 · Ctrl = précision fine · caméra bloquée pendant le drag</div>
+        <div>Clique une poignée · Shift+clic = sélection multiple · glisse ↑ / ↓</div>
+        <div className="opacity-55">Ctrl+Z / Ctrl+Y · opérations de calibration · caméra bloquée pendant le drag</div>
 
         {selectedPoint && (
           <div className="mt-2 rounded-lg border border-white/10 bg-white/5 p-2">
             <div className="font-mono text-white mb-1">
               Cellule {selectedPoint.row + 1}:{selectedPoint.col + 1} · {selectedPoint.value.toFixed(decimals)}
+              {effectiveSelection.length > 1 ? ` · ${effectiveSelection.length} sélectionnées` : ""}
             </div>
-            <div className="flex items-center gap-1.5">
-              <button type="button" className="rounded-md bg-white/10 px-2 py-1 font-bold hover:bg-white/20" onClick={() => adjustSelected(-step)}>−</button>
-              <button type="button" className="rounded-md bg-white/10 px-2 py-1 font-bold hover:bg-white/20" onClick={() => adjustSelected(step)}>+</button>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button type="button" className="rounded-md bg-white/10 px-2 py-1 font-bold hover:bg-white/20" onClick={() => applySelectionOperation("subtract")}>−</button>
+              <button type="button" className="rounded-md bg-white/10 px-2 py-1 font-bold hover:bg-white/20" onClick={() => applySelectionOperation("add")}>+</button>
               <span className="text-white/40 ml-1">pas</span>
               <input
                 value={step}
@@ -367,20 +550,44 @@ export function Map3DMappingEditor({
               <input
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") applyExactValue();
-                }}
-                className="ml-auto w-24 rounded-md border border-violet-400/30 bg-black/30 px-1.5 py-1 text-right font-mono text-[10px] text-white outline-none"
+                onKeyDown={(e) => { if (e.key === "Enter") applyExactValue(); }}
+                className="w-20 rounded-md border border-violet-400/30 bg-black/30 px-1.5 py-1 text-right font-mono text-[10px] text-white outline-none"
                 inputMode="decimal"
                 aria-label="Valeur exacte"
               />
               <button type="button" className="rounded-md bg-violet-600/70 px-2 py-1 font-semibold text-white hover:bg-violet-500" onClick={applyExactValue}>OK</button>
             </div>
-          </div>
-        )}
-      </div>
 
-      <div className="pointer-events-none absolute bottom-3 left-3 z-20 rounded-lg border border-white/10 bg-black/45 px-2.5 py-1.5 text-[9px] text-white/60 backdrop-blur-md">
+            <div className="mt-2 flex flex-wrap gap-1">
+              <button type="button" className="rounded-md bg-cyan-500/15 px-2 py-1 text-[9px] text-cyan-200 hover:bg-cyan-500/25" onClick={() => applySelectionOperation("percent")}>% {percentValue}</button>
+              <input
+                value={percentValue}
+                onChange={(e) => {
+                  const v = Number(e.target.value.replace(",", "."));
+                  if (Number.isFinite(v)) setPercentValue(v);
+                }}
+                className="w-14 rounded-md border border-white/15 bg-black/30 px-1.5 py-1 text-center font-mono text-[9px] text-white outline-none"
+                inputMode="decimal"
+                aria-label="Pourcentage"
+              />
+              <button type="button" className="rounded-md bg-violet-500/15 px-2 py-1 text-[9px] text-violet-200 hover:bg-violet-500/25" onClick={() => applySelectionOperation("smooth")}>Smooth</button>
+              <button type="button" className="rounded-md bg-violet-500/15 px-2 py-1 text-[9px] text-violet-200 hover:bg-violet-500/25" onClick={() => applySelectionOperation("interpolate")}>Interpolate</button>
+              <button type="button" className="rounded-md bg-violet-500/15 px-2 py-1 text-[9px] text-violet-200 hover:bg-violet-500/25" onClick={() => applySelectionOperation("flatten")}>Flatten</button>
+            </div>
+
+            <div className="mt-1 flex flex-wrap gap-1">
+              <button type="button" className="rounded-md bg-fuchsia-500/15 px-2 py-1 text-[9px] text-fuchsia-200 hover:bg-fuchsia-500/25" onClick={() => applySelectionOperation("slopeX")}>Pente X</button>
+              <button type="button" className="rounded-md bg-fuchsia-500/15 px-2 py-1 text-[9px] text-fuchsia-200 hover:bg-fuchsia-500/25" onClick={() => applySelectionOperation("slopeY")}>Pente Y</button>
+              <button type="button" className="rounded-md bg-amber-500/15 px-2 py-1 text-[9px] text-amber-200 hover:bg-amber-500/25" onClick={() => applySelectionOperation("mirrorX")}>Miroir X</button>
+              <button type="button" className="rounded-md bg-amber-500/15 px-2 py-1 text-[9px] text-amber-200 hover:bg-amber-500/25" onClick={() => applySelectionOperation("mirrorY")}>Miroir Y</button>
+            </div>
+
+            <div className="mt-1 flex gap-1">
+              <button type="button" disabled={!historyRef.current.length} className="rounded-md bg-white/10 px-2 py-1 text-[9px] disabled:opacity-30" onClick={undo}>↶ Undo</button>
+              <button type="button" disabled={!futureRef.current.length} className="rounded-md bg-white/10 px-2 py-1 text-[9px] disabled:opacity-30" onClick={redo}>↷ Redo</button>
+            </div>
+          </div>
+        )} left-3 z-20 rounded-lg border border-white/10 bg-black/45 px-2.5 py-1.5 text-[9px] text-white/60 backdrop-blur-md">
         X: {xLabels[0] ?? "—"} → {xLabels[xLabels.length - 1] ?? "—"} · Y: {yLabels[0] ?? "—"} → {yLabels[yLabels.length - 1] ?? "—"}
       </div>
 

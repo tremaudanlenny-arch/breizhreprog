@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build and Publish Windows EXE
 
 on:
   push:
@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: breizhreprog-windows-${{ github.ref }}
@@ -48,12 +48,37 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri -> target"
+          cache-all-crates: true
 
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit --no-fund
 
       - name: Build Windows installer
         run: npm run tauri build -- --bundles nsis
+
+      - name: Prepare release
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          "VERSION=$version" >> $env:GITHUB_ENV
+          $exe = Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -Filter *.exe -File | Select-Object -First 1
+          if (-not $exe) { throw "Installer .exe introuvable." }
+          "EXE_PATH=$($exe.FullName)" >> $env:GITHUB_ENV
+          Write-Host "Version: $version"
+          Write-Host "Installer: $($exe.FullName)"
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "v$env:VERSION"
+          gh release view $tag --repo "${{ github.repository }}" *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag "$env:EXE_PATH" --repo "${{ github.repository }}" --title "Breizh Reprog X Ninnin Projet Perf v$env:VERSION" --notes "Breizh Reprog X Ninnin Projet Perf Windows installer. Cette release est utilisée par la mise à jour automatique."
+          } else {
+            gh release upload $tag "$env:EXE_PATH" --repo "${{ github.repository }}" --clobber
+          }
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4

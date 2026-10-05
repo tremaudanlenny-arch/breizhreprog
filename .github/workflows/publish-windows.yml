@@ -31,7 +31,7 @@ jobs:
         run: npm install
 
       - name: Generate Breizh Reprog icons
-        run: npm run tauri -- icon public/breizh-reprog-logo.svg -o src-tauri/icons
+        run: npm run tauri -- icon public/breizh-reprog-logo.svg
 
       - name: Build and publish Windows installer
         uses: tauri-apps/tauri-action@v1

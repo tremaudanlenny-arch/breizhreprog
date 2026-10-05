@@ -1,5 +1,5 @@
-// Ouvre une page GitHub de ZedSuite dans le navigateur par défaut (la webview
-// n'a pas d'onglets) : commande Rust limitée au dépôt ZedSuite.
+// Ouvre une page GitHub de Breizh Reprog X Ninnin dans le navigateur par défaut (la webview
+// n'a pas d'onglets) : commande Rust limitée au dépôt Breizh Reprog X Ninnin.
 import { invoke } from "@tauri-apps/api/core";
 
 export const BREIZH_REPROG_RELEASES_URL = "https://github.com/tremaudanlenny-arch/breizhreprog/releases";

@@ -1,4 +1,4 @@
-// ZedSuite desktop application
+// Breizh Reprog X Ninnin desktop application
 // The detection engine lives in `detector/` (one module per ECU manufacturer);
 // `commands.rs` exposes it to the frontend through Tauri IPC commands.
 
@@ -99,5 +99,5 @@ pub fn run() {
             update::download_and_install_update,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running ZedSuite");
+        .expect("error while running Breizh Reprog X Ninnin");
 }

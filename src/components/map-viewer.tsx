@@ -13,13 +13,7 @@ import { resolveMapCellLayout, resolveAxisLabels, resolveAxisSources } from "@/l
 import { getMapValueRange, clampMapValue } from "@/lib/map-value-range";
 import { gridToText, parseGridText } from "@/lib/clipboard-grid";
 import { readSystemClipboardText, writeSystemClipboardText } from "@/lib/system-clipboard";
-// Map 3D uses react-three-fiber and must never be evaluated during Next.js SSR.
 import dynamic from "next/dynamic";
-
-const Map3DMappingEditor = dynamic(
-  () => import("@/components/map-3d-mapping-editor").then((mod) => mod.Map3DMappingEditor),
-  { ssr: false, loading: () => null },
-);
 
 const Plot = dynamic(() => import("react-plotly.js"), { 
   ssr: false,
@@ -688,6 +682,8 @@ export function MapViewer({
   // moteur d'édition.
   const [mapping3DMode, setMapping3DMode] = useState(false);
   const [selected3DCell, setSelected3DCell] = useState<{ row: number; col: number } | null>(null);
+  const [hovered3DCell, setHovered3DCell] = useState<{ row: number; col: number } | null>(null);
+  const drag3DRef = useRef<{ row: number; col: number; startY: number; startValue: number } | null>(null);
   const atdcSkipPersistRef = useRef(false);
   const atdcRenderStorageKey = useMemo(
     () => "breizhreprog-atdc-render:" + encodeURIComponent(projectName || "default") + ":" + encodeURIComponent(fileName || "default") + ":" + mapData.address.toString(16) + ":" + atdcSoi,
@@ -4430,36 +4426,98 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
   // Le mettre plus haut évite une Temporal Dead Zone après compilation/minification
   // (le bundle transformait le nom en « aj » et faisait planter tout MapViewer).
   const plot3DRenderData = useMemo(() => {
-    if (!mapping3DMode || !selected3DCell) return plot3DData;
+    if (!mapping3DMode) return plot3DData;
+
     const needsYReverse =
       displayYAxisLabels.length > 0 &&
       parseFloat(displayYAxisLabels[0]) > parseFloat(displayYAxisLabels[displayYAxisLabels.length - 1]);
-    const plotRow = needsYReverse
-      ? displayMapValues.length - 1 - selected3DCell.row
-      : selected3DCell.row;
-    const plotCol = selected3DCell.col;
-    const value = displayMapValues[selected3DCell.row]?.[plotCol];
-    if (value === undefined) return plot3DData;
+
+    const rows = displayMapValues.length;
+    const cols = displayMapValues[0]?.length ?? 0;
+    const pointX: number[] = [];
+    const pointY: number[] = [];
+    const pointZ: number[] = [];
+    const pointCustomData: Array<[number, number]> = [];
+    const pointSizes: number[] = [];
+
+    for (let row = 0; row < rows; row++) {
+      const plotRow = needsYReverse ? rows - 1 - row : row;
+      for (let col = 0; col < cols; col++) {
+        pointX.push(col);
+        pointY.push(plotRow);
+        pointZ.push(displayMapValues[row][col]);
+        pointCustomData.push([row, col]);
+        pointSizes.push(selected3DCell?.row === row && selected3DCell?.col === col ? 8 : 5);
+      }
+    }
 
     return [
       ...plot3DData,
       {
-        x: [plotCol],
-        y: [plotRow],
-        z: [value],
+        x: pointX,
+        y: pointY,
+        z: pointZ,
+        customdata: pointCustomData,
         type: "scatter3d" as const,
         mode: "markers" as const,
         marker: {
-          size: 7,
+          size: pointSizes,
           color: "#ffffff",
-          line: { color: "#7c3aed", width: 3 },
+          opacity: 0.92,
+          line: { color: "#7c3aed", width: 1.5 },
         },
-        hovertemplate: "Cellule sélectionnée<br>Valeur: %{z:.2f}<extra></extra>",
+        hovertemplate: "Cellule %{customdata[0]}×%{customdata[1]}<br>Valeur: %{z:.2f}<extra></extra>",
         showlegend: false,
       },
     ];
   }, [plot3DData, mapping3DMode, selected3DCell, displayYAxisLabels, displayMapValues]);
 
+  useEffect(() => {
+    const move = (event: PointerEvent) => {
+      const drag = drag3DRef.current;
+      if (!drag) return;
+      event.preventDefault();
+      const range = Math.max(valueRange.max - valueRange.min, 1);
+      const sensitivity = range / 180;
+      updateDisplayCellValue(drag.row, drag.col, drag.startValue - (event.clientY - drag.startY) * sensitivity);
+    };
+    const up = () => {
+      if (!drag3DRef.current) return;
+      drag3DRef.current = null;
+      document.body.style.cursor = "default";
+    };
+    window.addEventListener("pointermove", move, { capture: true, passive: false });
+    window.addEventListener("pointerup", up, { capture: true });
+    window.addEventListener("pointercancel", up, { capture: true });
+    return () => {
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", up, true);
+    };
+  }, [updateDisplayCellValue, valueRange.max, valueRange.min]);
+
+  const handleEditable3DPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!mapping3DMode || isAtdcVirtual || event.button !== 0 || !hovered3DCell) return;
+    const { row, col } = hovered3DCell;
+    const value = displayMapValues[row]?.[col];
+    if (!Number.isFinite(value)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setSelected3DCell({ row, col });
+    const mapped = toMapCoords(row, col);
+    setSelectedCells(new Set([getCellKey(mapped.row, mapped.col)]));
+    drag3DRef.current = { row, col, startY: event.clientY, startValue: value };
+    document.body.style.cursor = "ns-resize";
+  };
+
+  const handleEditable3DHover = (event: any) => {
+    const point = event?.points?.find((p: any) => Array.isArray(p?.customdata));
+    if (!point?.customdata) return;
+    setHovered3DCell({
+      row: Number(point.customdata[0]),
+      col: Number(point.customdata[1]),
+    });
+  };
 
   // Étiquettes d'axes (indices → vraies valeurs) pour les deux layouts 3D
   const plot3DTicks = useMemo(
@@ -4752,27 +4810,47 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
   )}
 </div>
               {mapping3DMode ? (
-                <Map3DMappingEditor
-                  values={displayMapValues}
-                  minValue={valueRange.min}
-                  maxValue={valueRange.max}
-                  selectedCell={selected3DCell}
-                  onSelectCell={(cell) => {
-                    const mapped = toMapCoords(cell.row, cell.col);
-                    const key = getCellKey(mapped.row, mapped.col);
-                    keyboardCursorRef.current = { row: cell.row, col: cell.col };
-                    setSelected3DCell(cell);
-                    setSelectedXAxisCells(new Set());
-                    setSelectedYAxisCells(new Set());
-                    setSelectedCells(new Set([key]));
+                <div
+                  className="absolute inset-0"
+                  onPointerDownCapture={handleEditable3DPointerDown}
+                  onPointerLeave={() => {
+                    if (!drag3DRef.current) setHovered3DCell(null);
                   }}
-                  onChangeCell={updateDisplayCellValue}
-                  onChangeCells={updateDisplayCells}
-                  xLabels={displayXAxisLabels}
-                  yLabels={displayYAxisLabels}
-                  decimals={cellDecimals}
-                  theme={theme}
-                />
+                >
+                  <Plot
+                    key={`3d-editable-${mapData.address}`}
+                    data={plot3DRenderData}
+                    layout={{
+                      paper_bgcolor: "transparent",
+                      plot_bgcolor: "transparent",
+                      scene: {
+                        xaxis: { title: parseAxisUnits().xLabel + " (" + parseAxisUnits().xUnit + ")", backgroundcolor: "transparent", gridcolor: "#374151", showbackground: true, color: "#9ca3af", tickmode: "array" as const, tickvals: plot3DTicks.xTickVals, ticktext: plot3DTicks.xTickText },
+                        yaxis: { title: parseAxisUnits().yLabel + " (" + parseAxisUnits().yUnit + ")", backgroundcolor: "transparent", gridcolor: "#374151", showbackground: true, color: "#9ca3af", tickmode: "array" as const, tickvals: plot3DTicks.yTickVals, ticktext: plot3DTicks.yTickText },
+                        zaxis: { title: "Value", backgroundcolor: "transparent", gridcolor: "#374151", showbackground: true, color: "#9ca3af" },
+                        camera: cameraPosition,
+                        aspectmode: "manual",
+                        aspectratio: { x: 1, y: 1, z: 0.7 },
+                      },
+                      margin: { t: 50, r: 0, b: 0, l: 0 },
+                      autosize: true,
+                      uirevision: `${mapData.address}-editable`,
+                    }}
+                    config={{ displayModeBar: false, displaylogo: false, staticPlot: isDraggingWindow }}
+                    style={{ width: "100%", height: "100%" }}
+                    useResizeHandler={true}
+                    onHover={handleEditable3DHover}
+                    onUnhover={() => { if (!drag3DRef.current) setHovered3DCell(null); }}
+                    onClick={handlePlot3DClick}
+                    onDoubleClick={handlePlot3DDoubleClick}
+                    onRelayout={handlePlotlyRelayout}
+                  />
+                  <div className="absolute left-3 top-3 z-30 rounded-lg border px-3 py-2 text-[10px] backdrop-blur-md"
+                    style={{ background: theme === "light" ? "rgba(255,255,255,.88)" : "rgba(10,10,15,.78)", borderColor: getCellBorderColor(), color: getCellTextColor() }}>
+                    <div className="font-semibold text-violet-400">MAPPING 3D</div>
+                    <div>1 point = 1 cellule · survole puis maintiens le clic</div>
+                    <div className="opacity-60">Souris ↑/↓ = modifier la valeur · couleurs/surface d'origine conservées</div>
+                  </div>
+                </div>
               ) : (
               <Plot
                 key={`3d-${mapData.address}`}
@@ -5467,26 +5545,35 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
   )}
 </div>
                     {mapping3DMode && !isAtdcVirtual ? (
-                      <div className="absolute inset-0 z-10">
-                        <Map3DMappingEditor
-                          values={displayMapValues}
-                          minValue={(() => {
-                            const flat = displayMapValues.flat();
-                            return flat.length ? Math.min(...flat) : 0;
-                          })()}
-                          maxValue={(() => {
-                            const flat = displayMapValues.flat();
-                            return flat.length ? Math.max(...flat) : 1;
-                          })()}
-                          selectedCell={selected3DCell}
-                          onSelectCell={(cell) => setSelected3DCell(cell)}
-                          onChangeCell={updateDisplayCellValue}
-                          onChangeCells={updateDisplayCells}
-                          xLabels={displayXAxisLabels}
-                          yLabels={displayYAxisLabels}
-                          decimals={cellDecimals}
-                          theme={theme}
+                      <div className="absolute inset-0 z-10" onPointerDownCapture={handleEditable3DPointerDown}>
+                        <Plot
+                          key={`3d-easy-editable-${mapData.address}`}
+                          data={plot3DRenderData}
+                          layout={{
+                            paper_bgcolor: "transparent",
+                            plot_bgcolor: "transparent",
+                            scene: {
+                              xaxis: { title: parseAxisUnits().xLabel + " (" + parseAxisUnits().xUnit + ")", backgroundcolor: "transparent", gridcolor: "#374151", showbackground: true, color: "#9ca3af", tickmode: "array" as const, tickvals: plot3DTicks.xTickVals, ticktext: plot3DTicks.xTickText },
+                              yaxis: { title: parseAxisUnits().yLabel + " (" + parseAxisUnits().yUnit + ")", backgroundcolor: "transparent", gridcolor: "#374151", showbackground: true, color: "#9ca3af", tickmode: "array" as const, tickvals: plot3DTicks.yTickVals, ticktext: plot3DTicks.yTickText },
+                              zaxis: { title: "Value", backgroundcolor: "transparent", gridcolor: "#374151", showbackground: true, color: "#9ca3af" },
+                              camera: cameraPosition,
+                              aspectmode: "manual",
+                              aspectratio: { x: 1, y: 1, z: 0.7 },
+                            },
+                            margin: { t: 20, r: 0, b: 0, l: 0 },
+                            autosize: true,
+                            uirevision: `${mapData.address}-editable-easy`,
+                          }}
+                          config={{ displayModeBar: false, displaylogo: false, staticPlot: isDraggingWindow }}
+                          style={{ width: "100%", height: "100%" }}
+                          useResizeHandler={true}
+                          onHover={handleEditable3DHover}
+                          onUnhover={() => { if (!drag3DRef.current) setHovered3DCell(null); }}
+                          onClick={handlePlot3DClick}
+                          onDoubleClick={handlePlot3DDoubleClick}
+                          onRelayout={handlePlotlyRelayout}
                         />
+                      </div>
                       </div>
                     ) : (
                       <Plot

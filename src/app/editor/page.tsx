@@ -93,6 +93,7 @@ import { AtdcToolModal } from "@/components/atdc-tool-modal";
 import { InjectionCalculatorModal, type InjectionApplyResult } from "@/components/injection-calculator-modal";
 import { CalibrationWorkspaceModal } from "@/components/calibration-workspace-modal";
 import { CalibrationToolsModal } from "@/components/calibration-tools-modal";
+import { CalibrationMathTools } from "@/components/calibration-math-tools";
 import { PromptModal } from "@/components/prompt-modal";
 import { correctChecksumByEcuType, isChecksumSupported, ChecksumResult } from "@/lib/ecu/bosch/checksums";
 import { disableDTC, enableDTC, detectDTCs, type DetectedDTC, type CodeblockInfo } from "@/lib/ecu/bosch/dtc";
@@ -2160,6 +2161,7 @@ function EditorPageContent() {
   const [injectionCalculatorOpen, setInjectionCalculatorOpen] = useState(false);
   const [calibrationWorkspaceOpen, setCalibrationWorkspaceOpen] = useState(false);
   const [calibrationToolsOpen, setCalibrationToolsOpen] = useState(false);
+  const [calibrationMathToolsOpen, setCalibrationMathToolsOpen] = useState(false);
   const [injectionInitialIq, setInjectionInitialIq] = useState(85);
   const [injectionInitialAtdc, setInjectionInitialAtdc] = useState(9);
   const [calibrationEngineKey, setCalibrationEngineKey] = useState(0);
@@ -6485,7 +6487,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
       <div className="flex items-center justify-between px-2 pb-2">
         <div>
           <div className="text-[13px] font-bold tracking-wide">OUTILS</div>
-          <div className="text-[10px] opacity-50">Calculateur ATDC</div>
+          <div className="text-[10px] opacity-50">Calculateurs et outils de calibration</div>
         </div>
       </div>
 
@@ -6500,6 +6502,22 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
           <span className="text-[13px] font-semibold">Calculateur ATDC</span>
         </span>
         <span className="mt-1 block pl-7 text-[10px] opacity-50">Durée − SOI avec les valeurs live de la map</span>
+      <button
+        type="button"
+        onClick={() => {
+          setToolsMenuOpen(false);
+          setCalibrationMathToolsOpen(true);
+        }}
+        className={`mt-2 w-full rounded-xl border px-4 py-4 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-purple-50' : 'hover:bg-purple-500/[0.08]'}`}
+        style={{ borderColor: getBorderColor() }}
+      >
+        <span className="flex items-center gap-2.5">
+          <Calculator className="h-5 w-5 text-fuchsia-400" />
+          <span className="text-[13px] font-semibold">Outils de calcul</span>
+        </span>
+        <span className="mt-1 block pl-7 text-[10px] opacity-50">RPM · IQ / durée · AFR / lambda · injecteur · rampe</span>
+      </button>
+
       </button>
     </div>
   );
@@ -8854,6 +8872,13 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
             });
           }}
           onClose={() => setCalibrationToolsOpen(false)}
+        />
+      )}
+
+      {calibrationMathToolsOpen && (
+        <CalibrationMathTools
+          theme={theme}
+          onClose={() => setCalibrationMathToolsOpen(false)}
         />
       )}
 

@@ -26,7 +26,7 @@ type ViewMode = "text" | "2d" | "3d";
 
 // Cache pour mémoriser les données extraites de chaque map (par adresse)
 // Ce cache évite de recalculer les données à chaque changement de map
-const CACHE_VERSION = "2026-10-breizhreprog-atdc-v1";
+const CACHE_VERSION = "2026-10-breizhreprog-atdc-v2-normalized-soi";
 
 // Map globale pour sauvegarder les positions de caméra de chaque map 3D
 // Persiste entre les montages/démontages du composant
@@ -2897,11 +2897,21 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
           let finalValue = correctedValue;
 
           if (isAtdcVirtual && atdcSoiMap && soiLayout) {
+            // The Duration and SOI maps can have different dimensions
+            // (e.g. Duration 00 = 10x10, SOI 90° = 14x16). Map them by
+            // normalized cell position so the top-right Duration cell uses
+            // the top-right SOI cell: 38 - 29 = 9.
+            const soiRow = rows > 1 && soiLayout.rows > 1
+              ? Math.round(row * (soiLayout.rows - 1) / (rows - 1))
+              : 0;
+            const soiCol = cols > 1 && soiLayout.cols > 1
+              ? Math.round(col * (soiLayout.cols - 1) / (cols - 1))
+              : 0;
             const soiValue = readCorrectedSourceCell(
               atdcSoiMap as typeof mapData,
               atdcSoiMap.address,
-              row,
-              col,
+              soiRow,
+              soiCol,
               soiLayout,
             );
             finalValue = soiValue == null ? 0 : correctedValue - soiValue;
@@ -4153,18 +4163,15 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
           {isAtdcVirtual && (
             <label className="flex items-center gap-1 ml-1 pl-2 text-[10px] whitespace-nowrap" onMouseDown={(e) => e.stopPropagation()}>
               <span style={{ color: theme === 'light' ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.55)' }}>SOI</span>
-              <select
-                value={atdcSoi}
-                onChange={() => {}}
-                className="h-5 rounded px-1 text-[10px] outline-none"
+              <span className="h-5 rounded px-2 inline-flex items-center text-[10px] font-semibold"
                 style={{
-                  background: theme === 'light' ? '#ffffff' : '#171a22',
-                  color: theme === 'light' ? '#111827' : '#ffffff',
+                  background: theme === 'light' ? 'rgba(124,58,237,.10)' : 'rgba(168,85,247,.16)',
+                  color: theme === 'light' ? '#6d28d9' : '#ddd6fe',
                   border: '1px solid rgba(168,85,247,.45)'
                 }}
               >
-                {[90, 80, 70, 60, 50].map((v) => <option key={v} value={v}>{v}°</option>)}
-              </select>
+                {atdcSoi}°
+              </span>
               <span className="px-1 py-0.5 rounded bg-violet-500/15 text-violet-300">ATDC = TI − SOI</span>
             </label>
           )}

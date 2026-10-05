@@ -424,30 +424,38 @@ export function InjectionCalculatorModal({
             ) : (
               <>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                  <div><div className="opacity-50">Source</div><div className="font-semibold">{selectedSourceName}</div></div>
-                  <div><div className="opacity-50">Cible</div><div className="font-semibold">{selectedTargetName}</div></div>
-                  <div><div className="opacity-50">Col/ligne quantité</div><div className="font-mono font-semibold">{calculation.targetColumnOrRow + 1}</div></div>
+                  <div><div className="opacity-50">Duration</div><div className="font-semibold">{calculation.durationMapName}</div><div className="font-mono opacity-60">IQ index {calculation.durationInfo.index + 1}</div></div>
+                  <div><div className="opacity-50">SOI</div><div className="font-semibold">{calculation.soiMapName}</div><div className="font-mono opacity-60">IQ index {calculation.soiInfo.index + 1}</div></div>
+                  <div><div className="opacity-50">Mode</div><div className="font-semibold">{direction === "duration-to-soi" ? "Durée → SOI" : "SOI → Durée"}</div><div className="font-mono opacity-60">{axisMode === "x" ? "IQ sur X" : "IQ sur Y"}</div></div>
                 </div>
+                {!calculation.targetInRange && (
+                  <div className="mt-3 rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                    {targetIq} mg est hors plage d'au moins une des deux maps. Aucun extrapolage silencieux ne sera appliqué.
+                  </div>
+                )}
                 <div className="mt-4 overflow-auto rounded-lg border" style={{ borderColor: border }}>
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="border-b" style={{ borderColor: border }}>
-                        <th className="px-3 py-2 text-left">Position</th>
-                        <th className="px-3 py-2 text-right">Valeur source</th>
-                        <th className="px-3 py-2 text-right">Valeur cible</th>
+                        <th className="px-3 py-2 text-left">Axe secondaire</th>
+                        <th className="px-3 py-2 text-right">Duration @ IQ</th>
+                        <th className="px-3 py-2 text-right">SOI @ IQ</th>
+                        <th className="px-3 py-2 text-right">ATDC</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {calculation.mappedTargetValues.slice(0, 12).map((value, index) => {
-                        const sourceIndex = resampleIndex(index, calculation.mappedTargetValues.length, calculation.mappedTargetValues.length);
-                        const sourceValue = direction === "duration-to-soi"
-                          ? value + targetAtdc
-                          : value - targetAtdc;
+                      {calculation.durationSeries.slice(0, 12).map((durationValue, index) => {
+                        const soiValue = calculation.soiSeries[index];
+                        const durationAxis = calculation.durationOtherAxis[index];
+                        const atdc = Number.isFinite(durationValue) && Number.isFinite(soiValue)
+                          ? durationValue - soiValue
+                          : NaN;
                         return (
                           <tr key={index} className="border-b border-white/5 last:border-0">
-                            <td className="px-3 py-1.5 font-mono">{index + 1}</td>
-                            <td className="px-3 py-1.5 text-right">{sourceValue.toFixed(2)}</td>
-                            <td className="px-3 py-1.5 text-right font-semibold text-fuchsia-300">{value.toFixed(2)}</td>
+                            <td className="px-3 py-1.5 font-mono">{Number.isFinite(durationAxis) ? durationAxis.toFixed(2) : index + 1}</td>
+                            <td className="px-3 py-1.5 text-right font-semibold">{Number.isFinite(durationValue) ? durationValue.toFixed(2) : "—"}</td>
+                            <td className="px-3 py-1.5 text-right font-semibold text-fuchsia-300">{Number.isFinite(soiValue) ? soiValue.toFixed(2) : "—"}</td>
+                            <td className="px-3 py-1.5 text-right text-emerald-300">{Number.isFinite(atdc) ? atdc.toFixed(2) : "—"}</td>
                           </tr>
                         );
                       })}
@@ -455,7 +463,7 @@ export function InjectionCalculatorModal({
                   </table>
                 </div>
                 <div className="mt-3 rounded-lg bg-violet-500/10 px-3 py-2 text-[11px]" style={{ color: muted }}>
-                  Formule utilisée : ATDC = TI − SOI. La valeur cible est écrite uniquement sur la ligne/colonne correspondant à {Number.isFinite(targetIq) ? targetIq : "la cible"} mg, puis les autres lignes sont interpolées sur la dimension restante.
+                  Formule : ATDC = Duration − SOI. À {Number.isFinite(targetIq) ? targetIq : "la cible"} mg, le calcul écrit réellement la colonne/ligne IQ correspondante dans <b>Duration</b> et la valeur SOI cohérente avec l'ATDC demandé dans <b>SOI</b>, avec interpolation de l'axe secondaire.
                 </div>
               </>
             )}

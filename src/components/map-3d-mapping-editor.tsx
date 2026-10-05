@@ -159,6 +159,8 @@ export function Map3DMappingEditor({
   const dragRef = useRef<{ row: number; col: number; startY: number; startValue: number } | null>(null);
   const draggingRef = useRef(false);
   const controlsRef = useRef<any>(null);
+  const draggingRef = useRef(false);
+  const controlsRef = useRef<any>(null);
 
   const effectiveMin = Number.isFinite(minValue) ? minValue : 0;
   const effectiveMax = Number.isFinite(maxValue) && maxValue > effectiveMin ? maxValue : effectiveMin + 1;

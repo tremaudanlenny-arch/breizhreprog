@@ -2,23 +2,26 @@ name: Publish Breizh Reprog Windows
 
 on:
   workflow_dispatch:
-  push:
+  workflow_run:
+    workflows:
+      - "Build Windows EXE"
+    types:
+      - completed
     branches:
       - master
-    paths:
-      - package.json
-      - src-tauri/Cargo.toml
-      - src-tauri/tauri.conf.json
 permissions:
   contents: write
 
 jobs:
   publish:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: windows-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4

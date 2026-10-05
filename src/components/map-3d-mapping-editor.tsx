@@ -65,6 +65,7 @@ function MappingPoint({
   position: [number, number, number];
   decimals: number;
   onSelect: (cell: { row: number; col: number }) => void;
+  onStartDrag: (event: React.PointerEvent) => void;
 }) {
   const t = maxValue === minValue ? 0.5 : (value - minValue) / (maxValue - minValue);
   return (
@@ -74,6 +75,7 @@ function MappingPoint({
         event.stopPropagation();
         event.nativeEvent.preventDefault();
         onSelect({ row, col });
+        onStartDrag(event);
       }}
       onPointerOver={(event) => {
         event.stopPropagation();
@@ -170,27 +172,13 @@ export function Map3DMappingEditor({
     ? cells.find((cell) => cell.row === selectedCell.row && cell.col === selectedCell.col)
     : null;
 
-  const startDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!selectedPoint) return;
-    if (event.button !== 0) return;
-    event.preventDefault();
-    dragRef.current = {
-      row: selectedPoint.row,
-      col: selectedPoint.col,
-      startY: event.clientY,
-      startValue: selectedPoint.value,
-    };
-    setDragging(true);
-  };
-
   const surfaceColor = theme === "light" ? "#eef2ff" : "#0f0b17";
   const gridColor = theme === "light" ? "#c4b5fd" : "#4c1d95";
 
   return (
     <div
       className="relative h-full w-full overflow-hidden"
-      onPointerDown={startDrag}
-      style={{ cursor: selectedPoint ? "grab" : "default" }}
+      style={{ cursor: selectedPoint ? "default" : "default" }}
       title={selectedPoint ? "Glisse verticalement pour monter ou descendre le point sélectionné" : "Clique un point pour le sélectionner"}
     >
       <Canvas
@@ -250,6 +238,19 @@ export function Map3DMappingEditor({
               position={cell.position}
               decimals={decimals}
               onSelect={onSelectCell}
+              onStartDrag={(event) => {
+                if (event.button !== 0) return;
+                const point = cells.find((candidate) => candidate.row === cell.row && candidate.col === cell.col);
+                if (!point) return;
+                event.preventDefault();
+                dragRef.current = {
+                  row: point.row,
+                  col: point.col,
+                  startY: event.clientY,
+                  startValue: point.value,
+                };
+                setDragging(true);
+              }}
             />
           ))}
 

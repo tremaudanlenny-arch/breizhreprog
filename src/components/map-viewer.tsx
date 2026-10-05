@@ -469,6 +469,20 @@ interface MapViewerProps {
     x_axis_values?: number[] | null;
     y_axis_values?: number[] | null;
     atdc_source_duration_address?: number;
+    atdc_source_duration_map?: {
+      name: string;
+      address: number;
+      size?: number;
+      correction_factor?: number;
+      offset?: number;
+      data_type?: string;
+      is_little_endian?: boolean;
+      x_label?: string;
+      y_label?: string;
+      x_axis_values?: number[] | null;
+      y_axis_values?: number[] | null;
+      dimensions?: { TwoDimensional?: { rows: number; cols: number }; OneDimensional?: { length: number } };
+    };
     atdc_source_soi_map?: {
       name: string;
       address: number;
@@ -477,6 +491,10 @@ interface MapViewerProps {
       offset?: number;
       data_type?: string;
       is_little_endian?: boolean;
+      x_label?: string;
+      y_label?: string;
+      x_axis_values?: number[] | null;
+      y_axis_values?: number[] | null;
       dimensions?: { TwoDimensional?: { rows: number; cols: number }; OneDimensional?: { length: number } };
     };
     atdc_soi_default?: number;
@@ -3377,14 +3395,39 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
             // axes in the same orientation. In the screenshotmed EDC15 case:
             // Duration = X RPM / Y IQ, while SOI = X IQ / Y RPM.
             // Resolve RPM/IQ first, then query SOI using its own axis order.
-            const axisKind = (axisLabel: string | undefined, labels: string[]) => {
-              const text = ((axisLabel || "") + " " + labels.join(" ")).toLowerCase();
+            const axisKind = (
+              axisLabel: string | undefined,
+              labels: string[],
+              explicitValues?: number[] | null,
+            ) => {
+              const text = String(axisLabel || "").toLowerCase();
               if (text.includes("rpm") || text.includes("engine speed")) return "rpm";
               if (text.includes("iq") || text.includes("mg/st") || text.includes("mg/stroke")) return "iq";
+
+              const values = (explicitValues?.length ? explicitValues : labels)
+                .map((v) => Number.parseFloat(String(v)))
+                .filter(Number.isFinite);
+              if (values.length >= 2) {
+                const min = Math.min(...values);
+                const max = Math.max(...values);
+                // In these Bosch injection maps, RPM axes are typically hundreds/thousands,
+                // while IQ axes are in mg/stroke and remain below ~200 mg/cp.
+                if (max > 200 || min >= 250) return "rpm";
+                if (max <= 200) return "iq";
+              }
               return "other";
             };
-            const durationXKind = axisKind(durationSnapshot?.xAxisLabel, durationX);
-            const durationYKind = axisKind(durationSnapshot?.yAxisLabel, durationY);
+
+            const durationXKind = axisKind(
+              mapData.atdc_source_duration_map?.x_label ?? durationSnapshot?.xAxisLabel,
+              durationX,
+              mapData.atdc_source_duration_map?.x_axis_values,
+            );
+            const durationYKind = axisKind(
+              mapData.atdc_source_duration_map?.y_label ?? durationSnapshot?.yAxisLabel,
+              durationY,
+              mapData.atdc_source_duration_map?.y_axis_values,
+            );
             const rpmValue =
               durationXKind === "rpm" ? rawX :
               durationYKind === "rpm" ? rawY : rawX;
@@ -3393,8 +3436,16 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
               durationYKind === "iq" ? rawY : rawY;
 
             if (soiValues?.length && soiX.length && soiY.length) {
-              const soiXKind = axisKind(soiSnapshot?.xAxisLabel, soiX);
-              const soiYKind = axisKind(soiSnapshot?.yAxisLabel, soiY);
+              const soiXKind = axisKind(
+                mapData.atdc_source_soi_map?.x_label ?? soiSnapshot?.xAxisLabel,
+                soiX,
+                mapData.atdc_source_soi_map?.x_axis_values,
+              );
+              const soiYKind = axisKind(
+                mapData.atdc_source_soi_map?.y_label ?? soiSnapshot?.yAxisLabel,
+                soiY,
+                mapData.atdc_source_soi_map?.y_axis_values,
+              );
               const soiQueryX =
                 soiXKind === "rpm" ? rpmValue :
                 soiXKind === "iq" ? iqValue :

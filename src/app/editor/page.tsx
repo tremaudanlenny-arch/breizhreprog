@@ -6228,7 +6228,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     const maps = projectData?.detectionResults?.maps ?? [];
     return maps.filter((m) =>
       !m.external_source &&
-      /(?:injector\\s+)?duration\\s+0?[1-5](?:\\D|$)/i.test(m.name || "") &&
+      /(?:injector\s+)?duration\s+0?[1-5](?:\D|$)/i.test(m.name || "") &&
       !/selector/i.test(m.name || "")
     );
   }, [projectData?.detectionResults?.maps]);

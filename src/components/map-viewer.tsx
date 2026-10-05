@@ -443,6 +443,16 @@ interface MapViewerProps {
     x_axis_values?: number[] | null;
     y_axis_values?: number[] | null;
     atdc_source_duration_address?: number;
+    atdc_source_soi_map?: {
+      name: string;
+      address: number;
+      size?: number;
+      correction_factor?: number;
+      offset?: number;
+      data_type?: string;
+      is_little_endian?: boolean;
+      dimensions?: { TwoDimensional?: { rows: number; cols: number }; OneDimensional?: { length: number } };
+    };
     atdc_soi_default?: number;
   };
   fileData: number[];
@@ -605,10 +615,7 @@ export function MapViewer({
   const theme = themeProp ?? themeContext;
   const { t } = useI18n();
   const isAtdcVirtual = mapData.map_type === "atdc_virtual";
-  const [atdcSoi, setAtdcSoi] = useState<number>(mapData.atdc_soi_default ?? 90);
-  useEffect(() => {
-    if (isAtdcVirtual) setAtdcSoi(mapData.atdc_soi_default ?? 90);
-  }, [mapData.address, isAtdcVirtual, mapData.atdc_soi_default]);
+  const atdcSoi = mapData.atdc_soi_default ?? 90;
 
   // Active value-edit prompt (cell / X axis / Y axis). null = closed. The
   // themed PromptModal replaces the native window.prompt() so it matches the
@@ -2238,8 +2245,10 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     const sourceMapAddress = mapData.map_type === "atdc_virtual"
       ? (mapData.atdc_source_duration_address ?? mapData.address)
       : mapData.address;
-    const cacheKey = getCacheKey(mapData.address, projectName, fileName);
-    const fileDataHash = getFileDataHash(fileData, sourceMapAddress);
+    const atdcSoiMap = isAtdcVirtual ? mapData.atdc_source_soi_map : undefined;
+    const atdcSoiAddress = atdcSoiMap?.address ?? 0;
+    const cacheKey = getCacheKey(mapData.address, projectName, fileName) + (isAtdcVirtual ? `_soi_${atdcSoiAddress}` : "");
+    const fileDataHash = getFileDataHash(fileData, sourceMapAddress) + (isAtdcVirtual ? "_soi_" + getFileDataHash(fileData, atdcSoiAddress) : "");
     const cached = mapDataCache.get(cacheKey);
 
     // Get current dimensions from mapData (handle both 2D and 1D maps)
@@ -2353,7 +2362,44 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
 
     const values: number[][] = [];
     const startAddress = sourceMapAddress;
-    
+
+    const readCorrectedSourceCell = (
+      source: typeof mapData,
+      baseAddress: number,
+      row: number,
+      col: number,
+      layout: ReturnType<typeof resolveMapCellLayout>,
+    ): number | null => {
+      const dataType = String(source.data_type || "");
+      const bytesPerCell = dataType === "UInt8" || dataType === "Int8" ? 1 : 2;
+      const offset = baseAddress + layout.cellIndex(row, col) * bytesPerCell;
+      if (offset < 0 || offset + bytesPerCell > fileData.length) return null;
+
+      let rawValue: number;
+      if (bytesPerCell === 1) {
+        rawValue = fileData[offset];
+        if (dataType === "Int8" && rawValue > 127) rawValue -= 256;
+      } else {
+        const sourceName = String(source.name || "").toLowerCase();
+        const little = source.is_little_endian === true || sourceName.includes("soi selector");
+        const big = !little && isBigEndianEcu(ecuType);
+        rawValue = big
+          ? ((fileData[offset] << 8) | fileData[offset + 1])
+          : (fileData[offset] | (fileData[offset + 1] << 8));
+        const alwaysSigned =
+          sourceName.includes("drivers wish") ||
+          sourceName.includes("driver wish") ||
+          sourceName.includes("egr hysteresis");
+        if ((dataType === "Int16" || alwaysSigned) && rawValue > 32767) rawValue -= 65536;
+      }
+
+      const correction = source.correction_factor ?? 1;
+      const offsetValue = typeof source.offset === "number" && isFinite(source.offset) ? source.offset : 0;
+      return rawValue * correction + offsetValue;
+    };
+
+    const soiLayout = atdcSoiMap ? resolveMapCellLayout(atdcSoiMap) : null;
+
     // CRITICAL: Read axes from file - swap addresses if axes are swapped
     const xLabels = [];
     let xLabelsWereReversed = false; // Track if X labels were reversed to align columns later
@@ -2848,7 +2894,19 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
               ? displaySettings.map.offset
               : (mapData.offset ?? 0.0);
           const correctedValue = (rawValue * correction) + offsetValue;
-          const finalValue = isAtdcVirtual ? (correctedValue - atdcSoi) : correctedValue;
+          let finalValue = correctedValue;
+
+          if (isAtdcVirtual && atdcSoiMap && soiLayout) {
+            const soiValue = readCorrectedSourceCell(
+              atdcSoiMap as typeof mapData,
+              atdcSoiMap.address,
+              row,
+              col,
+              soiLayout,
+            );
+            finalValue = soiValue == null ? 0 : correctedValue - soiValue;
+          }
+
           rowValues.push(finalValue);
         } else {
           rowValues.push(0);
@@ -3050,7 +3108,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       xAxisIsIndex,
       yAxisIsIndex,
     };
-  }, [mapData, fileData, projectName, fileName, displaySettings, atdcSoi]);
+  }, [mapData, fileData, projectName, fileName, displaySettings]);
 
   // Reset data when map changes to prevent showing stale data
   useEffect(() => {
@@ -4097,7 +4155,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
               <span style={{ color: theme === 'light' ? 'rgba(0,0,0,.55)' : 'rgba(255,255,255,.55)' }}>SOI</span>
               <select
                 value={atdcSoi}
-                onChange={(e) => setAtdcSoi(Number(e.target.value))}
+                onChange={() => {}}
                 className="h-5 rounded px-1 text-[10px] outline-none"
                 style={{
                   background: theme === 'light' ? '#ffffff' : '#171a22',

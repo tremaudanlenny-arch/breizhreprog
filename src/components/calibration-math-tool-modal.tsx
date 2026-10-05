@@ -1,19 +1,45 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Activity, Calculator, Copy, Gauge, X, Zap } from "lucide-react";
+import { Activity, Calculator, Copy, FileCog, X, Zap } from "lucide-react";
 
 export type CalibrationMathTool =
-  | "rpm"
   | "iq-duration"
   | "afr"
   | "injector-flow"
   | "injection-duration"
   | "ramp";
 
+type DurationMap = {
+  name: string;
+  address: number;
+};
+
+type Snapshot = {
+  mapValues: number[][];
+  sourceXAxisLabels?: string[];
+  sourceYAxisLabels?: string[];
+  xAxisLabels: string[];
+  yAxisLabels: string[];
+  xAxisLabel?: string;
+  yAxisLabel?: string;
+  mapName: string;
+};
+
+type SelectionInfo = {
+  mapName: string;
+  mapAddress: number;
+  selectedCount: number;
+  selectedCells: Array<{ row: number; col: number; address: number; value: number }>;
+} | null;
+
 type Props = {
   theme: "default" | "light" | "oled";
   tool: CalibrationMathTool;
+  durationMaps?: DurationMap[];
+  snapshots?: Map<number, Snapshot>;
+  selection?: SelectionInfo;
+  onApplyRamp?: (mapAddress: number, changes: Record<string, number>) => void;
   onClose: () => void;
 };
 
@@ -22,6 +48,76 @@ const fmt = (value: number, digits = 3) =>
   Number.isFinite(value)
     ? value.toLocaleString("fr-FR", { maximumFractionDigits: digits })
     : "—";
+
+const axisNumbers = (axis?: string[]) =>
+  (axis || []).map((v) => Number.parseFloat(String(v)));
+
+const axisKind = (label: string | undefined, values: number[]) => {
+  const text = String(label || "").toLowerCase();
+  if (text.includes("rpm") || text.includes("engine speed")) return "rpm";
+  if (text.includes("iq") || text.includes("mg/st") || text.includes("mg/stroke")) return "iq";
+  const finite = values.filter(Number.isFinite);
+  if (finite.length >= 2) {
+    const max = Math.max(...finite);
+    const min = Math.min(...finite);
+    if (max > 200 || min >= 250) return "rpm";
+    if (max <= 200) return "iq";
+  }
+  return "other";
+};
+
+const bracket = (axis: number[], target: number) => {
+  const finite = axis.every(Number.isFinite);
+  if (!finite || axis.length < 1 || !Number.isFinite(target)) return null;
+  if (axis.length === 1) return { i0: 0, i1: 0, t: 0 };
+  const asc = axis[0] <= axis[axis.length - 1];
+  const work = asc ? axis : [...axis].reverse();
+  let j = 0;
+  if (target <= work[0]) j = 0;
+  else if (target >= work[work.length - 1]) j = work.length - 2;
+  else {
+    for (let i = 0; i < work.length - 1; i++) {
+      if (target >= work[i] && target <= work[i + 1]) {
+        j = i;
+        break;
+      }
+    }
+  }
+  const a = work[j];
+  const b = work[j + 1];
+  const t = b === a ? 0 : (target - a) / (b - a);
+  return asc
+    ? { i0: j, i1: j + 1, t }
+    : { i0: axis.length - 1 - j, i1: axis.length - 1 - (j + 1), t };
+};
+
+const sampleDuration = (
+  values: number[][],
+  xAxis: number[],
+  yAxis: number[],
+  rpm: number,
+  iq: number,
+  xKind: string,
+  yKind: string,
+) => {
+  if (!values.length || !values[0]?.length) return NaN;
+
+  const xTarget = xKind === "rpm" ? rpm : iq;
+  const yTarget = yKind === "rpm" ? rpm : iq;
+  const xb = bracket(xAxis, xTarget);
+  const yb = bracket(yAxis, yTarget);
+  if (!xb || !yb) return NaN;
+
+  const q11 = values[yb.i0]?.[xb.i0];
+  const q21 = values[yb.i0]?.[xb.i1];
+  const q12 = values[yb.i1]?.[xb.i0];
+  const q22 = values[yb.i1]?.[xb.i1];
+  if (![q11, q21, q12, q22].every(Number.isFinite)) return NaN;
+
+  const a = q11 + (q21 - q11) * xb.t;
+  const b = q12 + (q22 - q12) * xb.t;
+  return a + (b - a) * yb.t;
+};
 
 function Field({
   label,
@@ -51,85 +147,119 @@ function Field({
   );
 }
 
-export function CalibrationMathToolModal({ theme, tool, onClose }: Props) {
+export function CalibrationMathToolModal({
+  theme,
+  tool,
+  durationMaps = [],
+  snapshots,
+  selection,
+  onApplyRamp,
+  onClose,
+}: Props) {
   const light = theme === "light";
   const text = light ? "#111827" : "#fff";
   const muted = light ? "rgba(17,24,39,.56)" : "rgba(255,255,255,.55)";
   const border = light ? "rgba(17,24,39,.12)" : "rgba(168,85,247,.22)";
 
-  const [rpm, setRpm] = useState("3000");
-  const [degrees, setDegrees] = useState("1");
-
+  const [durationAddress, setDurationAddress] = useState(durationMaps[0]?.address ?? 0);
   const [iq, setIq] = useState("50");
-  const [fuelDensity, setFuelDensity] = useState("0.832");
-  const [flow, setFlow] = useState("100");
+  const [rpm, setRpm] = useState("3000");
+  const [direction, setDirection] = useState<"iq-to-duration" | "duration-to-iq">("iq-to-duration");
+  const [duration, setDuration] = useState("10");
 
   const [afr, setAfr] = useState("14.7");
+  const [airMass, setAirMass] = useState("1000");
 
-  const [injectorFlow, setInjectorFlow] = useState("550");
-  const [refPressure, setRefPressure] = useState("3");
-  const [targetPressure, setTargetPressure] = useState("4");
+  const [injectorFlow, setInjectorFlow] = useState("50");
+  const [refPressure, setRefPressure] = useState("1000");
+  const [targetPressure, setTargetPressure] = useState("1200");
 
-  const [duration, setDuration] = useState("0.601");
+  const [injectionDuration, setInjectionDuration] = useState("600");
+  const [durationFlow, setDurationFlow] = useState("50");
 
   const [rampStart, setRampStart] = useState("100");
   const [rampEnd, setRampEnd] = useState("200");
   const [rampSteps, setRampSteps] = useState("11");
   const [rampMode, setRampMode] = useState<"linear" | "smooth">("linear");
-
   const [copied, setCopied] = useState("");
 
-  const rpmResult = useMemo(() => {
-    const r = num(rpm);
-    const d = num(degrees);
-    if (!(r > 0) || !(d >= 0)) return null;
-    const oneDegreeUs = 60000000 / (r * 360);
-    return {
-      oneDegreeUs,
-      angleUs: oneDegreeUs * d,
-      frequencyHz: r / 60,
-      cycleMs: 60000 / r,
-    };
-  }, [rpm, degrees]);
+  const selectedDuration = snapshots?.get(durationAddress);
+  const durationCalculation = useMemo(() => {
+    if (!selectedDuration) return null;
 
-  const iqResult = useMemo(() => {
-    const q = num(iq);
-    const density = num(fuelDensity);
-    const qFlow = num(flow);
-    if (!(q >= 0) || !(density > 0) || !(qFlow > 0)) return null;
-    const volumeMm3 = q / density;
-    const durationMs = volumeMm3 / qFlow;
-    return { volumeMm3, durationMs, durationUs: durationMs * 1000 };
-  }, [iq, fuelDensity, flow]);
+    const values = selectedDuration.sourceMapValues ?? selectedDuration.mapValues;
+    const xAxis = axisNumbers(selectedDuration.sourceXAxisLabels ?? selectedDuration.xAxisLabels);
+    const yAxis = axisNumbers(selectedDuration.sourceYAxisLabels ?? selectedDuration.yAxisLabels);
+    const xKind = axisKind(selectedDuration.xAxisLabel, xAxis);
+    const yKind = axisKind(selectedDuration.yAxisLabel, yAxis);
+    const rpmValue = num(rpm);
+    const iqValue = num(iq);
+    const durationValue = num(duration);
 
-  const injectorResult = useMemo(() => {
-    const qRef = num(injectorFlow);
-    const pRef = num(refPressure);
-    const pTarget = num(targetPressure);
-    if (!(qRef > 0) || !(pRef > 0) || !(pTarget > 0)) return null;
-    return qRef * Math.sqrt(pTarget / pRef);
-  }, [injectorFlow, refPressure, targetPressure]);
+    if (direction === "iq-to-duration") {
+      return {
+        rpmValue,
+        iqValue,
+        result: sampleDuration(values, xAxis, yAxis, rpmValue, iqValue, xKind, yKind),
+        xKind,
+        yKind,
+      };
+    }
 
-  const durationResult = useMemo(() => {
-    const d = num(duration);
-    const q = num(flow);
-    if (!(d >= 0) || !(q > 0)) return null;
-    return d * q;
-  }, [duration, flow]);
+    const iqCandidates = xKind === "iq" ? xAxis : yKind === "iq" ? yAxis : [];
+    if (!iqCandidates.length) return { rpmValue, iqValue, result: NaN, xKind, yKind };
 
-  const afrResult = Number(afr.replace(",", "."));
+    const samples = iqCandidates.map((candidate) => ({
+      iq: candidate,
+      duration: sampleDuration(values, xAxis, yAxis, rpmValue, candidate, xKind, yKind),
+    })).filter((item) => Number.isFinite(item.duration));
+
+    if (samples.length < 2) return { rpmValue, iqValue, result: NaN, xKind, yKind };
+
+    let best = samples[0];
+    for (const item of samples) {
+      if (Math.abs(item.duration - durationValue) < Math.abs(best.duration - durationValue)) best = item;
+    }
+
+    const sorted = [...samples].sort((a, b) => a.duration - b.duration);
+    let lower = sorted[0];
+    let upper = sorted[sorted.length - 1];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      if (durationValue >= sorted[i].duration && durationValue <= sorted[i + 1].duration) {
+        lower = sorted[i];
+        upper = sorted[i + 1];
+        break;
+      }
+    }
+    const t = upper.duration === lower.duration
+      ? 0
+      : (durationValue - lower.duration) / (upper.duration - lower.duration);
+    const estimatedIq = lower.iq + (upper.iq - lower.iq) * t;
+    return { rpmValue, iqValue, result: estimatedIq, nearest: best.iq, xKind, yKind };
+  }, [selectedDuration, direction, rpm, iq, duration]);
 
   const ramp = useMemo(() => {
     const start = num(rampStart);
     const end = num(rampEnd);
     const steps = Math.max(2, Math.round(num(rampSteps)));
-    if (!Number.isFinite(start) || !Number.isFinite(end) || !Number.isFinite(steps)) return [];
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return [];
     return Array.from({ length: steps }, (_, index) => {
       const t = index / (steps - 1);
       const shaped = rampMode === "smooth" ? t * t * (3 - 2 * t) : t;
       return start + (end - start) * shaped;
     });
   }, [rampStart, rampEnd, rampSteps, rampMode]);
+
+  const applyRamp = () => {
+    if (!selection || !onApplyRamp || selection.selectedCells.length === 0 || ramp.length === 0) return;
+    const ordered = [...selection.selectedCells].sort((a, b) => a.row - b.row || a.col - b.col);
+    const changes: Record<string, number> = {};
+    ordered.forEach((cell, index) => {
+      const source = ramp[index % ramp.length];
+      changes[cell.row + "-" + cell.col] = source;
+    });
+    onApplyRamp(selection.mapAddress, changes);
+  };
 
   const copy = async (label: string, value: string) => {
     try {
@@ -140,139 +270,136 @@ export function CalibrationMathToolModal({ theme, tool, onClose }: Props) {
   };
 
   const titles: Record<CalibrationMathTool, string> = {
-    rpm: "Convertisseur RPM",
-    "iq-duration": "IQ → durée d'injection",
+    "iq-duration": "IQ ↔ durée d'injection",
     afr: "Calculateur AFR",
     "injector-flow": "Débit injecteur",
     "injection-duration": "Durée d'injection",
     ramp: "Générateur de rampe",
   };
 
-  const renderBody = () => {
+  const body = (() => {
     switch (tool) {
-      case "rpm":
-        return (
-          <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Régime" value={rpm} onChange={setRpm} unit="tr/min" />
-              <Field label="Angle" value={degrees} onChange={setDegrees} unit="°" />
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded-lg border p-3" style={{ borderColor: border }}>
-                <div className="opacity-50">1° vilebrequin</div>
-                <div className="mt-1 text-lg font-black">{fmt(rpmResult?.oneDegreeUs ?? NaN, 2)} µs</div>
-              </div>
-              <div className="rounded-lg border p-3" style={{ borderColor: border }}>
-                <div className="opacity-50">Angle demandé</div>
-                <div className="mt-1 text-lg font-black">{fmt(rpmResult?.angleUs ?? NaN, 2)} µs</div>
-              </div>
-            </div>
-            <div className="text-[10px]" style={{ color: muted }}>
-              Fréquence : {fmt(rpmResult?.frequencyHz ?? NaN, 2)} Hz · tour complet : {fmt(rpmResult?.cycleMs ?? NaN, 3)} ms
-            </div>
-          </div>
-        );
-
       case "iq-duration":
         return (
           <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="IQ" value={iq} onChange={setIq} unit="mg/cp" />
-              <Field label="Densité carburant" value={fuelDensity} onChange={setFuelDensity} unit="g/cm³" />
-              <Field label="Débit" value={flow} onChange={setFlow} unit="mm³/ms" />
+            <div className="rounded-lg border p-3 text-[10px]" style={{ borderColor: border }}>
+              <div className="flex items-center gap-2 font-semibold"><FileCog className="h-3.5 w-3.5 text-violet-400" /> Fichier courant en arrière-plan</div>
+              <div className="mt-1" style={{ color: muted }}>{durationMaps.length} map(s) Duration détectée(s) · données live mises à jour automatiquement.</div>
             </div>
-            <div className="grid grid-cols-3 gap-2 rounded-lg border p-3 text-center text-xs" style={{ borderColor: border }}>
-              <div><div className="opacity-50">Volume</div><div className="mt-1 font-black">{fmt(iqResult?.volumeMm3 ?? NaN, 2)} mm³</div></div>
-              <div><div className="opacity-50">Durée</div><div className="mt-1 font-black">{fmt(iqResult?.durationMs ?? NaN, 4)} ms</div></div>
-              <div><div className="opacity-50">Durée</div><div className="mt-1 font-black">{fmt(iqResult?.durationUs ?? NaN, 0)} µs</div></div>
+            <label className="block">
+              <div className="mb-1 text-[11px] opacity-60">Map Duration</div>
+              <select value={durationAddress} onChange={(e) => setDurationAddress(Number(e.target.value))} className="w-full rounded-lg border bg-black/20 px-3 py-2 text-xs outline-none" style={{ borderColor: border }}>
+                {durationMaps.map((map) => <option key={map.address} value={map.address}>{map.name}</option>)}
+              </select>
+            </label>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Régime" value={rpm} onChange={setRpm} unit="tr/min" />
+              <label className="block">
+                <div className="mb-1 text-[11px] opacity-60">Sens du calcul</div>
+                <select value={direction} onChange={(e) => setDirection(e.target.value as typeof direction)} className="w-full rounded-lg border bg-black/20 px-3 py-2 text-xs" style={{ borderColor: border }}>
+                  <option value="iq-to-duration">IQ → durée</option>
+                  <option value="duration-to-iq">Durée → IQ</option>
+                </select>
+              </label>
             </div>
-            <div className="text-[10px]" style={{ color: muted }}>
-              Estimation hydraulique configurable. Ce n'est pas la caractéristique réelle de l'ECU/injecteur.
-            </div>
-          </div>
-        );
-
-      case "afr":
-        return (
-          <div className="space-y-4">
-            <Field label="AFR" value={afr} onChange={setAfr} />
+            {direction === "iq-to-duration"
+              ? <Field label="IQ" value={iq} onChange={setIq} unit="mg/coup" />
+              : <Field label="Durée" value={duration} onChange={setDuration} unit="unité map" />}
             <div className="rounded-lg border p-4" style={{ borderColor: border }}>
-              <div className="text-[10px] opacity-50">Valeur AFR</div>
-              <div className="mt-1 text-3xl font-black">{fmt(afrResult, 3)}</div>
-            </div>
-            <div className="text-[10px]" style={{ color: muted }}>
-              Outil AFR uniquement, sans conversion Lambda.
+              <div className="text-[10px] opacity-50">{direction === "iq-to-duration" ? "Durée interpolée depuis la map" : "IQ interpolée depuis la map"}</div>
+              <div className="mt-1 text-2xl font-black">{fmt(durationCalculation?.result ?? NaN, 3)} {direction === "iq-to-duration" ? "unité map" : "mg/coup"}</div>
+              {durationCalculation && <div className="mt-2 text-[10px]" style={{ color: muted }}>Axes détectés : X={durationCalculation.xKind} · Y={durationCalculation.yKind}</div>}
             </div>
           </div>
         );
 
-      case "injector-flow":
+      case "afr": {
+        const air = num(airMass);
+        const fuel = num(afr);
+        const result = air / fuel;
+        return (
+          <div className="space-y-4">
+            <div className="rounded-lg border p-3 text-[10px]" style={{ borderColor: border }}>
+              Calcul direct diesel : <b>AFR = masse d'air / masse de carburant</b>.
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Masse d'air" value={airMass} onChange={setAirMass} unit="mg/coup" />
+              <Field label="IQ carburant" value={afr} onChange={setAfr} unit="mg/coup" />
+            </div>
+            <div className="rounded-lg border p-4" style={{ borderColor: border }}>
+              <div className="text-[10px] opacity-50">AFR calculé</div>
+              <div className="mt-1 text-3xl font-black">{fmt(result, 2)} : 1</div>
+            </div>
+            <div className="text-[10px]" style={{ color: muted }}>Exemple de test : 1000 mg d'air / 50 mg d'IQ = 20:1.</div>
+          </div>
+        );
+      }
+
+      case "injector-flow": {
+        const q = num(injectorFlow);
+        const p0 = num(refPressure);
+        const p1 = num(targetPressure);
+        const result = q * Math.sqrt(p1 / p0);
         return (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="Débit de référence" value={injectorFlow} onChange={setInjectorFlow} unit="cc/min" />
+              <Field label="Débit de référence" value={injectorFlow} onChange={setInjectorFlow} unit="mg/coup" />
               <Field label="Pression de référence" value={refPressure} onChange={setRefPressure} unit="bar" />
               <Field label="Pression cible" value={targetPressure} onChange={setTargetPressure} unit="bar" />
             </div>
             <div className="flex items-center justify-between rounded-lg border p-3" style={{ borderColor: border }}>
-              <div>
-                <div className="text-[10px] opacity-50">Débit estimé à la pression cible</div>
-                <div className="mt-1 text-xl font-black">{fmt(injectorResult ?? NaN, 2)} cc/min</div>
-              </div>
-              <button type="button" onClick={() => copy("injector", String(injectorResult ?? ""))} className="rounded-lg border px-3 py-2 text-[10px] font-bold" style={{ borderColor: border }}>
-                <Copy className="mr-1 inline h-3.5 w-3.5" />{copied === "injector" ? "Copié" : "Copier"}
-              </button>
+              <div><div className="text-[10px] opacity-50">Débit estimé</div><div className="mt-1 text-xl font-black">{fmt(result, 2)} mg/coup</div></div>
+              <button type="button" onClick={() => copy("injector", String(result))} className="rounded-lg border px-3 py-2 text-[10px] font-bold" style={{ borderColor: border }}><Copy className="mr-1 inline h-3.5 w-3.5" />{copied === "injector" ? "Copié" : "Copier"}</button>
             </div>
           </div>
         );
+      }
 
-      case "injection-duration":
+      case "injection-duration": {
+        const d = num(injectionDuration);
+        const q = num(durationFlow);
         return (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Durée" value={duration} onChange={setDuration} unit="ms" />
-              <Field label="Débit" value={flow} onChange={setFlow} unit="mm³/ms" />
+              <Field label="Durée" value={injectionDuration} onChange={setInjectionDuration} unit="µs" />
+              <Field label="Débit" value={durationFlow} onChange={setDurationFlow} unit="mg/coup/ms" />
             </div>
-            <div className="flex items-center justify-between rounded-lg border p-3" style={{ borderColor: border }}>
-              <div>
-                <div className="text-[10px] opacity-50">Quantité théorique</div>
-                <div className="mt-1 text-xl font-black">{fmt(durationResult ?? NaN, 2)} mm³</div>
-              </div>
-              <button type="button" onClick={() => copy("duration", String(durationResult ?? ""))} className="rounded-lg border px-3 py-2 text-[10px] font-bold" style={{ borderColor: border }}>
-                <Copy className="mr-1 inline h-3.5 w-3.5" />{copied === "duration" ? "Copié" : "Copier"}
-              </button>
+            <div className="rounded-lg border p-4" style={{ borderColor: border }}>
+              <div className="text-[10px] opacity-50">Quantité théorique</div>
+              <div className="mt-1 text-2xl font-black">{fmt((d / 1000) * q, 3)} mg/coup</div>
             </div>
           </div>
         );
+      }
 
       case "ramp":
         return (
           <div className="space-y-4">
+            <div className="rounded-lg border p-3 text-[10px]" style={{ borderColor: border }}>
+              Sélection active : <b>{selection?.selectedCount ?? 0}</b> cellule(s) · {selection?.mapName || "aucune map"}
+            </div>
             <div className="grid gap-3 sm:grid-cols-3">
               <Field label="Départ" value={rampStart} onChange={setRampStart} />
               <Field label="Fin" value={rampEnd} onChange={setRampEnd} />
               <Field label="Nombre de points" value={rampSteps} onChange={setRampSteps} />
             </div>
             <div className="flex gap-2">
-              <select value={rampMode} onChange={(e) => setRampMode(e.target.value as "linear" | "smooth")} className="flex-1 rounded-lg border bg-black/20 px-3 py-2 text-xs outline-none" style={{ borderColor: border }}>
+              <select value={rampMode} onChange={(e) => setRampMode(e.target.value as "linear" | "smooth")} className="flex-1 rounded-lg border bg-black/20 px-3 py-2 text-xs" style={{ borderColor: border }}>
                 <option value="linear">Linéaire</option>
                 <option value="smooth">Progressive</option>
               </select>
-              <button type="button" onClick={() => copy("ramp", ramp.map((v) => Number(v.toFixed(6))).join(", "))} className="rounded-lg border px-3 py-2 text-xs font-bold" style={{ borderColor: border }}>
-                <Copy className="mr-1 inline h-3.5 w-3.5" />{copied === "ramp" ? "Copié" : "Copier"}
-              </button>
+              <button type="button" onClick={() => copy("ramp", ramp.join(", "))} className="rounded-lg border px-3 py-2 text-xs font-bold" style={{ borderColor: border }}><Copy className="mr-1 inline h-3.5 w-3.5" />{copied === "ramp" ? "Copié" : "Copier"}</button>
             </div>
-            <div className="max-h-64 overflow-auto rounded-lg border p-3 font-mono text-[11px]" style={{ borderColor: border }}>
-              {ramp.map((value, index) => (
-                <div key={index} className="flex items-center justify-between border-b border-white/5 py-1 last:border-0">
-                  <span className="opacity-45">#{index + 1}</span><span>{value.toFixed(6)}</span>
-                </div>
-              ))}
+            <div className="max-h-48 overflow-auto rounded-lg border p-3 font-mono text-[11px]" style={{ borderColor: border }}>
+              {ramp.map((value, index) => <div key={index} className="flex items-center justify-between border-b border-white/5 py-1 last:border-0"><span className="opacity-45">#{index + 1}</span><span>{value.toFixed(6)}</span></div>)}
             </div>
+            <button type="button" disabled={!selection?.selectedCount || !onApplyRamp} onClick={applyRamp} className="w-full rounded-lg bg-gradient-to-r from-violet-600 to-fuchsia-500 px-4 py-3 text-xs font-black text-white disabled:opacity-35">
+              <Zap className="mr-2 inline h-4 w-4" />Appliquer à la sélection
+            </button>
           </div>
         );
     }
-  };
+  })();
 
   return (
     <div className="fixed inset-0 z-[280] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,.76)", backdropFilter: "blur(10px)" }}>
@@ -281,7 +408,7 @@ export function CalibrationMathToolModal({ theme, tool, onClose }: Props) {
           <div className="flex items-center gap-2 font-black"><Calculator className="h-5 w-5 text-fuchsia-400" />{titles[tool]}</div>
           <button type="button" onClick={onClose} className="rounded-lg p-2 hover:bg-white/10"><X className="h-4 w-4" /></button>
         </div>
-        <div className="p-5">{renderBody()}</div>
+        <div className="p-5">{body}</div>
       </div>
     </div>
   );

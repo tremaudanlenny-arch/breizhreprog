@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Breizh Reprog</title>
+  <desc id="desc">Breizh Reprog application icon</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1030"/>
+      <stop offset="55%" stop-color="#6d28d9"/>
+      <stop offset="100%" stop-color="#d946ef"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="45%" stop-color="#d8dee9"/>
+      <stop offset="75%" stop-color="#7c8798"/>
+      <stop offset="100%" stop-color="#ffffff"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#000000" flood-opacity=".45"/>
+    </filter>
+  </defs>
+  <rect x="52" y="52" width="920" height="920" rx="210" fill="url(#bg)" filter="url(#shadow)"/>
+  <rect x="86" y="86" width="852" height="852" rx="178" fill="none" stroke="#ffffff" stroke-opacity=".18" stroke-width="10"/>
+  <path d="M188 530c58-174 192-274 338-274 124 0 228 70 286 176l-88 34c-45-68-111-108-190-108-97 0-181 62-222 172Z" fill="#0b0913" opacity=".72"/>
+  <path d="M190 590h644l-70 118H260Z" fill="#0b0913" opacity=".72"/>
+  <text x="512" y="535" text-anchor="middle" font-family="Arial Black,Arial,sans-serif" font-size="300" font-style="italic" font-weight="900" fill="url(#metal)" stroke="#140d21" stroke-width="18" paint-order="stroke">BR</text>
+  <circle cx="512" cy="746" r="74" fill="#140d21" stroke="#f5d0fe" stroke-width="10"/>
+  <path d="M512 686l24 60-24 60-24-60Z" fill="#d946ef"/>
+  <path d="M452 746h120" stroke="#ffffff" stroke-opacity=".6" stroke-width="8" stroke-linecap="round"/>
+</svg>

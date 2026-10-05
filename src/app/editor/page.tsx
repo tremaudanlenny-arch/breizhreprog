@@ -6503,7 +6503,6 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
 
   const renderToolsMenu = (placement: 'below' | 'side') => {
     const tools: Array<{ id: CalibrationMathTool; label: string; detail: string }> = [
-      { id: "rpm", label: "Convertisseur RPM", detail: "RPM ↔ temps par degré" },
       { id: "iq-duration", label: "IQ → durée", detail: "Quantité → durée d'injection" },
       { id: "afr", label: "Calculateur AFR", detail: "AFR uniquement" },
       { id: "injector-flow", label: "Débit injecteur", detail: "Débit selon la pression" },

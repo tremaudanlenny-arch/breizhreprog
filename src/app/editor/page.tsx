@@ -8837,6 +8837,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               map_type: "atdc_virtual",
               virtual_readonly: true,
               atdc_source_duration_address: source.address,
+              atdc_source_duration_map: source,
               atdc_source_soi_map: soiSource,
               atdc_soi_default: atdcToolSoi,
               category: "Injection system",

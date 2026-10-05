@@ -418,7 +418,7 @@ export function InjectionCalculatorModal({
 
           <div className="rounded-xl border p-4" style={{ borderColor: border }}>
             {!durationSnapshot || !soiSnapshot ? (
-              <div className="text-sm text-amber-300">Ouvre au moins une fois les maps Duration et SOI pour que l'outil récupère leurs valeurs et leurs axes.</div>
+              <div className="text-sm text-amber-300">Préparation des maps Duration / SOI en arrière-plan… aucune fenêtre de map n'a besoin d'être ouverte.</div>
             ) : !calculation ? (
               <div className="text-sm text-red-300">Impossible de calculer : vérifie la quantité et l'ATDC.</div>
             ) : (

@@ -7696,7 +7696,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               open={shortcutHelpOpen}
               onClose={() => setShortcutHelpOpen(false)}
               theme={theme}
-              version="1.16.0"
+              version="1.16.1"
             />
 
             <SettingsMenu

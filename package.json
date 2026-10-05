@@ -64,7 +64,6 @@
     "@types/react-plotly.js": "^2.6.3",
     "@types/three": "^0.160.0",
     "autoprefixer": "^10.4.16",
-    "autoprefixer": "^10.4.16",
     "eslint": "^8.56.0",
     "eslint-config-next": "15.0.3",
     "postcss": "^8.4.32",

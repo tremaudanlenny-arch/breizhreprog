@@ -4478,7 +4478,9 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       if (!drag) return;
       event.preventDefault();
       const range = Math.max(valueRange.max - valueRange.min, 1);
-      const sensitivity = range / 180;
+      // Réglage fin : ~1500 px pour traverser toute la plage, avec Shift encore plus précis.
+      // La valeur suit la résolution de la map via updateCellValue.
+      const sensitivity = range / (event.shiftKey ? 3000 : 1500);
       updateDisplayCellValue(drag.row, drag.col, drag.startValue - (event.clientY - drag.startY) * sensitivity);
     };
     const up = () => {

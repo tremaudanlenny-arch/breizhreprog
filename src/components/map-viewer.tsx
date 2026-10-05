@@ -522,7 +522,6 @@ interface MapViewerProps {
     selectedCells: Array<{ row: number; col: number; address: number; value: number }>;
   } | null) => void;
   // Callback pour partager les données 3D avec le parent (pour Preview window)
-  onChangeMapCells?: (mapAddress: number, changes: Array<{ row: number; col: number; value: number }>) => void;
   onPlot3DDataChange?: (mapAddress: number, data: {
     plot3DData: any[];
     xAxisLabels: string[];
@@ -630,7 +629,6 @@ export function MapViewer({
   theme: themeProp,
   onResizeActiveChange,
   onSelectionChange,
-  onChangeMapCells,
   onPlot3DDataChange,
   liveMapSnapshots,
   liveSnapshotVersion = 0,

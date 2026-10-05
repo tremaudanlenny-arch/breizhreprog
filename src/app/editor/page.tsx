@@ -8822,6 +8822,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
           durationMaps={atdcSourceMaps}
           soiMaps={atdcSoiMaps}
           snapshots={mapPlot3DDataRef.current}
+          snapshotVersion={mapSnapshotVersion}
           initialTargetIq={injectionInitialIq}
           initialTargetAtdc={injectionInitialAtdc}
           onApply={handleInjectionCalculatorApply}

@@ -631,7 +631,8 @@ export function Map3DMappingEditor({
               <button type="button" disabled={!futureRef.current.length} className="rounded-md bg-white/10 px-2 py-1 text-[9px] disabled:opacity-30" onClick={redo}>↷ Redo</button>
             </div>
           </div>
-        )      </div>
+        )}
+      </div>
 
       <div className="absolute left-3 bottom-3 z-20 rounded-lg border border-white/10 bg-black/45 px-2.5 py-1.5 text-[9px] text-white/60 backdrop-blur-md">
         X: {xLabels[0] ?? "—"} → {xLabels[xLabels.length - 1] ?? "—"} · Y: {yLabels[0] ?? "—"} → {yLabels[yLabels.length - 1] ?? "—"}

@@ -4589,7 +4589,9 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
                 }}
                 style={{ width: "100%", height: "100%" }}
                 useResizeHandler={true}
-                onClick={handlePlot3DClick}\n                      onDoubleClick={handlePlot3DDoubleClick}\n                      onRelayout={handlePlotlyRelayout}
+                onClick={handlePlot3DClick}
+                      onDoubleClick={handlePlot3DDoubleClick}
+                      onRelayout={handlePlotlyRelayout}
               />
             </div>
             )}

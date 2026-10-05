@@ -113,7 +113,7 @@ function MappingPoint({
       </mesh>
 
       {/* Poignée visible : assez grosse pour être attrapée sans viser au pixel. */}
-      <mesh renderOrder={1001}>
+      <mesh renderOrder={1001} raycast={() => null}>
         <sphereGeometry args={[selected ? 0.16 : 0.12, selected ? 24 : 18, selected ? 24 : 18]} />
         <meshBasicMaterial
           color={selected ? "#ffffff" : color}
@@ -126,6 +126,7 @@ function MappingPoint({
       {selected && (
         <>
           <Line
+            raycast={() => null}
             points={[
               [0, 0, -position[2]],
               [0, 0, 0],
@@ -133,7 +134,7 @@ function MappingPoint({
             color="#f0abfc"
             lineWidth={2.5}
           />
-          <mesh position={[0, 0, 0.02]} renderOrder={1002}>
+          <mesh position={[0, 0, 0.02]} renderOrder={1002} raycast={() => null}>
             <sphereGeometry args={[0.19, 20, 20]} />
             <meshBasicMaterial color="#ffffff" transparent opacity={0.2} depthTest={false} depthWrite={false} />
           </mesh>

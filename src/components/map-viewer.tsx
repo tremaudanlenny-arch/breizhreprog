@@ -532,6 +532,16 @@ interface MapViewerProps {
     mapName: string;
     canShow3D: boolean;
   }) => void;
+  // Snapshots live Duration/SOI utilisés par la carte ATDC.
+  liveMapSnapshots?: Map<number, {
+    mapValues: number[][];
+    xAxisLabels: string[];
+    yAxisLabels: string[];
+    xAxisLabel: string;
+    yAxisLabel: string;
+    mapName: string;
+  }>;
+  liveSnapshotVersion?: number;
   // Callback pour ouvrir le modal Properties
   onOpenProperties?: () => void;
   // Paramètres d'affichage personnalisés pour cette map
@@ -620,6 +630,8 @@ export function MapViewer({
   onResizeActiveChange,
   onSelectionChange,
   onPlot3DDataChange,
+  liveMapSnapshots,
+  liveSnapshotVersion = 0,
   onOpenProperties,
   displaySettings: displaySettingsProp,
   onToggleInvertDisplay,
@@ -651,6 +663,9 @@ export function MapViewer({
   const theme = themeProp ?? themeContext;
   const { t } = useI18n();
   const isAtdcVirtual = mapData.map_type === "atdc_virtual";
+  // Une carte ATDC est recalculée quand une map Duration/SOI publie un nouveau
+  // snapshot. Les maps normales restent sur 0 pour ne pas invalider leur cache.
+  const atdcLiveSnapshotRevision = isAtdcVirtual ? liveSnapshotVersion : 0;
   const atdcSoi = mapData.atdc_soi_default ?? 90;
   const [atdcRenderOpen, setAtdcRenderOpen] = useState(false);
   const [atdcThreshold, setAtdcThreshold] = useState(0);
@@ -3252,7 +3267,52 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     const colsReversed = xLabelsWereReversed;
      
 
-    // Mettre en cache les r├®sultats
+    // ATDC live : privilégier les snapshots actuels des maps sources.
+    // Ils contiennent les modifications 2D/3D déjà appliquées par l'utilisateur,
+    // contrairement à une nouvelle lecture directe de fileData.
+    if (isAtdcVirtual && liveMapSnapshots) {
+      const durationSnapshot = liveMapSnapshots.get(sourceMapAddress);
+      const soiSnapshot = atdcSoiMap ? liveMapSnapshots.get(atdcSoiMap.address) : undefined;
+      const durationValues = durationSnapshot?.mapValues;
+      const soiValues = soiSnapshot?.mapValues;
+
+      if (
+        durationValues &&
+        durationValues.length > 0 &&
+        durationValues[0]?.length &&
+        soiValues &&
+        soiValues.length > 0 &&
+        soiValues[0]?.length
+      ) {
+        const liveRows = durationValues.length;
+        const liveCols = durationValues[0].length;
+        const soiRows = soiValues.length;
+        const soiCols = soiValues[0].length;
+
+        const liveAtdc = durationValues.map((row, r) =>
+          row.map((durationValue, c) => {
+            const soiRow = liveRows > 1 && soiRows > 1
+              ? Math.round(r * (soiRows - 1) / (liveRows - 1))
+              : 0;
+            const soiCol = liveCols > 1 && soiCols > 1
+              ? Math.round(c * (soiCols - 1) / (liveCols - 1))
+              : 0;
+            const soiValue = Number(soiValues[soiRow]?.[soiCol]);
+            return Number.isFinite(soiValue) ? durationValue - soiValue : durationValue;
+          }),
+        );
+
+        values.splice(0, values.length, ...liveAtdc);
+        if (durationSnapshot.xAxisLabels?.length) {
+          xLabels.splice(0, xLabels.length, ...durationSnapshot.xAxisLabels);
+        }
+        if (durationSnapshot.yAxisLabels?.length) {
+          yLabels.splice(0, yLabels.length, ...durationSnapshot.yAxisLabels);
+        }
+      }
+    }
+
+    // Mettre en cache les résultats
     const cacheData: CachedMapData = {
       mapValues: values,
       xAxisLabels: xLabels,
@@ -3282,7 +3342,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       xAxisIsIndex,
       yAxisIsIndex,
     };
-  }, [mapData, fileData, projectName, fileName, displaySettings]);
+  }, [mapData, fileData, projectName, fileName, displaySettings, atdcLiveSnapshotRevision]);
 
   // Reset data when map changes to prevent showing stale data
   useEffect(() => {

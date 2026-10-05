@@ -7173,9 +7173,12 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               tous les zooms. */}
           <div data-tauri-drag-region className="mb-4 flex items-center justify-center">
             <div data-tauri-drag-region className="relative inline-block">
-              <div data-tauri-drag-region className="text-xl font-bold">
-                <span className="bg-gradient-to-r from-red-600 via-red-500 to-orange-500 bg-clip-text text-transparent">Zed</span><span style={{ color: getTextColor() }}>Suite</span>
-              </div>
+              <img
+                src="/breizh-reprog-logo.svg"
+                alt="Breizh Reprog"
+                data-tauri-drag-region
+                className="h-10 w-auto max-w-[210px] object-contain"
+              />
             </div>
           </div>
 

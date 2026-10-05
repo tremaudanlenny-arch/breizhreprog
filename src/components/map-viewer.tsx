@@ -3944,16 +3944,20 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     updateCellValue(mapped.row, mapped.col, value);
   }, [toMapCoords]);
 
-  // Lissage de sélection façon éditeur de calibration :
-  // - 1 ligne / 1 colonne : interpolation linéaire entre les extrémités
-  // - bloc 2D : lissage gaussien pondéré (3x3) en plusieurs passes, en
-  //   conservant le contour sélectionné comme ancrage. Le calcul se fait
-  //   d'un seul coup pour éviter les courses entre plusieurs setState().
+  // Smooth Selection : lissage plus proche d’un éditeur de calibration.
+  // On conserve le contour de la sélection comme ancrage et on diffuse
+  // uniquement l’intérieur avec les 4 voisins. Cela évite que les bords
+  // se déforment ou que 8 passes écrasent trop fortement la cartographie.
+  // Les sélections 1D restent interpolées proprement entre leurs extrémités.
   const smoothSelectedCells = useCallback(() => {
     if (isAtdcVirtual || selectedCells.size < 3 || mapValues.length === 0) return 0;
 
     const selected = new Set(selectedCells);
-    const cells = Array.from(selected).map((key) => key.split('-').map(Number) as [number, number]);
+    const cells = Array.from(selected).map((key) => key.split("-").map(Number) as [number, number]);
+    const original = mapValues.map((row) => [...row]);
+    let working = original.map((row) => [...row]);
+    const changes = new Map<string, number>();
+
     let minRow = Infinity, maxRow = -Infinity, minCol = Infinity, maxCol = -Infinity;
     for (const [row, col] of cells) {
       minRow = Math.min(minRow, row);
@@ -3962,82 +3966,63 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       maxCol = Math.max(maxCol, col);
     }
 
-    const original = mapValues.map((row) => [...row]);
-    let working = original.map((row) => [...row]);
-    const changes = new Map<string, number>();
-
-    // Cas 1D : on garde les extrémités et on interpole selon la vraie
-    // position des cellules sélectionnées (pas selon selectedCells.size).
+    // 1D : interpolation linéaire entre les extrémités, sans arrondir à
+    // chaque étape afin d’éviter les petits paliers visibles.
     if (minRow === maxRow || minCol === maxCol) {
-      const axisCells = cells
-        .filter(([row, col]) => minRow === maxRow ? row === minRow : col === minCol)
-        .sort((a, b) => (minRow === maxRow ? a[1] - b[1] : a[0] - b[0]));
-
-      if (axisCells.length >= 3) {
-        const [startR, startC] = axisCells[0];
-        const [endR, endC] = axisCells[axisCells.length - 1];
-        const startValue = original[startR]?.[startC] ?? 0;
-        const endValue = original[endR]?.[endC] ?? startValue;
-        for (let i = 1; i < axisCells.length - 1; i++) {
-          const [row, col] = axisCells[i];
-          const position = minRow === maxRow
-            ? (col - startC) / Math.max(1, endC - startC)
-            : (row - startR) / Math.max(1, endR - startR);
-          const value = clampValue(Math.round(startValue + (endValue - startValue) * position));
-          if (Math.abs(value - (original[row]?.[col] ?? value)) > 1e-6) {
-            working[row][col] = value;
-            changes.set(row + '-' + col, value);
-          }
+      const axisCells = [...cells].sort((a, b) => (minRow === maxRow ? a[1] - b[1] : a[0] - b[0]));
+      if (axisCells.length < 3) return 0;
+      const [startR, startC] = axisCells[0];
+      const [endR, endC] = axisCells[axisCells.length - 1];
+      const startValue = original[startR]?.[startC] ?? 0;
+      const endValue = original[endR]?.[endC] ?? startValue;
+      for (let i = 1; i < axisCells.length - 1; i++) {
+        const [row, col] = axisCells[i];
+        const position = minRow === maxRow
+          ? (col - startC) / Math.max(1, endC - startC)
+          : (row - startR) / Math.max(1, endR - startR);
+        const value = clampValue(startValue + (endValue - startValue) * position);
+        working[row][col] = value;
+        if (Math.abs(value - (original[row]?.[col] ?? value)) > 1e-6) {
+          changes.set(row + "-" + col, value);
         }
       }
     } else {
-      // Cas 2D : lissage façon éditeur de cartographie.
-      // On travaille sur TOUTE la sélection (pas uniquement l'intérieur),
-      // avec les 8 voisins sélectionnés et plusieurs passes successives.
-      // Cela évite l'impression que "Smooth Selection" ne fait presque rien
-      // sur les bords d'un bloc, et fonctionne aussi sur une sélection irrégulière.
-      const neighbors = [
-        [-1, -1, 1], [0, -1, 2], [1, -1, 1],
-        [-1,  0, 2], [0,  0, 3], [1,  0, 2],
-        [-1,  1, 1], [0,  1, 2], [1,  1, 1],
-      ] as const;
+      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]] as const;
+      const interior = cells.filter(([row, col]) => {
+        // Une cellule reste ancrée dès qu’un côté sort de la sélection.
+        return dirs.every(([dr, dc]) => selected.has((row + dr) + "-" + (col + dc)));
+      });
 
-      // 8 passes avec une forte pondération du résultat filtré : assez
-      // puissant pour obtenir une courbe/surface régulière, sans écraser
-      // brutalement les écarts de valeur.
-      for (let pass = 0; pass < 8; pass++) {
+      if (interior.length === 0) return 0;
+
+      // 5 passes progressives : assez fortes pour lisser les pointes,
+      // mais sans produire une surface plate.
+      for (let pass = 0; pass < 5; pass++) {
         const next = working.map((row) => [...row]);
-
-        for (const [row, col] of cells) {
-          let weightedSum = 0;
-          let weightSum = 0;
-
-          for (const [dr, dc, weight] of neighbors) {
-            const nr = row + dr;
-            const nc = col + dc;
-            if (!selected.has(nr + '-' + nc)) continue;
-            const value = working[nr]?.[nc];
-            if (typeof value !== 'number' || !Number.isFinite(value)) continue;
-            weightedSum += value * weight;
-            weightSum += weight;
+        for (const [row, col] of interior) {
+          let sum = 0;
+          let count = 0;
+          for (const [dr, dc] of dirs) {
+            const value = working[row + dr]?.[col + dc];
+            if (typeof value === "number" && Number.isFinite(value)) {
+              sum += value;
+              count++;
+            }
           }
-
-          if (weightSum > 0) {
-            const filtered = weightedSum / weightSum;
-            next[row][col] = clampValue(
-              Math.round(working[row][col] * 0.15 + filtered * 0.85)
-            );
+          if (count === 4) {
+            // 70 % du voisinage + 30 % de la valeur courante.
+            next[row][col] = working[row][col] * 0.30 + (sum / count) * 0.70;
           }
         }
-
         working = next;
       }
 
-      for (const [row, col] of cells) {
-        const value = working[row]?.[col];
+      for (const [row, col] of interior) {
+        const value = clampValue(working[row][col]);
         const before = original[row]?.[col];
-        if (typeof value === 'number' && typeof before === 'number' && Math.abs(value - before) > 1e-6) {
-          changes.set(row + '-' + col, value);
+        if (typeof before === "number" && Math.abs(value - before) > 1e-6) {
+          working[row][col] = value;
+          changes.set(row + "-" + col, value);
         }
       }
     }
@@ -4048,7 +4033,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     setChangedCells((prev) => {
       const next = { ...prev };
       for (const [key, value] of changes) {
-        const [row, col] = key.split('-').map(Number);
+        const [row, col] = key.split("-").map(Number);
         const originalValue = originalValuesRef.current?.[row]?.[col];
         if (originalValue !== undefined && Math.abs(originalValue - value) < 1e-6) delete next[key];
         else next[key] = value;

@@ -4199,6 +4199,56 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
                 {atdcSoi}°
               </span>
               <span className="px-1 py-0.5 rounded bg-violet-500/15 text-violet-300">ATDC = TI − SOI</span>
+              <div className="relative">
+                <button
+                  type="button"
+                  className="h-5 w-5 inline-flex items-center justify-center rounded hover:bg-white/10"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setAtdcRenderOpen((open) => !open);
+                  }}
+                  title="Réglage du rendu ATDC"
+                  style={{ color: theme === "light" ? "#6d28d9" : "#ddd6fe" }}
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                </button>
+                {atdcRenderOpen && (
+                  <div
+                    className="absolute top-7 right-0 z-[10000] w-64 rounded-lg p-3 shadow-xl"
+                    style={{
+                      background: theme === "light" ? "rgba(255,255,255,.98)" : "rgba(19,22,30,.98)",
+                      border: "1px solid " + (theme === "light" ? "rgba(0,0,0,.12)" : "rgba(255,255,255,.12)"),
+                      color: theme === "light" ? "#111827" : "#fff",
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="text-[11px] font-semibold mb-2">Rendu ATDC</div>
+                    <label className="block text-[10px] opacity-70 mb-1">Seuil {Math.round(atdcThreshold * 100)}%</label>
+                    <input type="range" min={0} max={95} value={Math.round(atdcThreshold * 100)} onChange={(e) => setAtdcThreshold(Number(e.target.value) / 100)} className="w-full mb-2" />
+                    <label className="block text-[10px] opacity-70 mb-1">Saturation {atdcSaturation.toFixed(1)}×</label>
+                    <input type="range" min={50} max={250} value={Math.round(atdcSaturation * 100)} onChange={(e) => setAtdcSaturation(Number(e.target.value) / 100)} className="w-full mb-2" />
+                    <label className="block text-[10px] opacity-70 mb-1">Contraste {atdcContrast.toFixed(1)}×</label>
+                    <input type="range" min={50} max={200} value={Math.round(atdcContrast * 100)} onChange={(e) => setAtdcContrast(Number(e.target.value) / 100)} className="w-full" />
+                    <button
+                      type="button"
+                      className="mt-3 w-full rounded px-2 py-1 text-[10px] font-semibold"
+                      style={{
+                        background: theme === "light" ? "rgba(109,40,217,.08)" : "rgba(168,85,247,.16)",
+                        color: theme === "light" ? "#6d28d9" : "#ddd6fe",
+                      }}
+                      onClick={() => {
+                        setAtdcThreshold(0);
+                        setAtdcSaturation(1);
+                        setAtdcContrast(1);
+                      }}
+                    >
+                      Réinitialiser
+                    </button>
+                  </div>
+                )}
+              </div>
             </label>
           )}
           {onToggleInvertDisplay && (

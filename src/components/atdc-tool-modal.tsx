@@ -48,7 +48,7 @@ export function AtdcToolModal({
     durationMaps.find((m) => new RegExp("(?:injector\\s+)?duration\\s+0?" + ti + "(?:\\D|$)", "i").test(m.name));
 
   const findSoi = (value: number) =>
-    soiMaps.find((m) => new RegExp("start\\s+of\\s+injection\\s+" + value + "(?:°|\\s|$)", "i").test(m.name));
+    soiMaps.find((m) => new RegExp("start\\s+of\\s+injection\\s+" + value + "(?:°C?|\\s|$)", "i").test(m.name));
 
   const selectedSoiMap = findSoi(soi);
 

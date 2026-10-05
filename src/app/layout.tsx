@@ -15,8 +15,8 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Breizh Reprog",
-  description: "Breizh Reprog - ECU map editor (Bosch EDC15/EDC16)",
+  title: "Breizh Reprog X Ninnin",
+  description: "Breizh Reprog X Ninnin - ECU map editor (Bosch EDC15/EDC16)",
 };
 
 export default function RootLayout({

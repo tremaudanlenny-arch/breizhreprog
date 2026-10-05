@@ -39,9 +39,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tagName: v__VERSION__
-          releaseName: Breizh Reprog v__VERSION__
+          releaseName: Breizh Reprog X Ninnin Projet Perf v__VERSION__
           releaseBody: |
-            Breizh Reprog Windows installer.
+            Breizh Reprog X Ninnin Projet Perf Windows installer.
             This release is also used by the in-app automatic updater.
           releaseDraft: false
           prerelease: false

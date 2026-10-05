@@ -5,7 +5,7 @@
   "license": "GPL-3.0-only",
   "description": "Breizh Reprog - ECU map editor (Bosch EDC15/EDC16), desktop app",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3001",
     "build": "next build",
     "lint": "next lint",
     "tauri": "tauri",

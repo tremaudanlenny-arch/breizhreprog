@@ -34,6 +34,7 @@ import {
   Search,
   FileUp,
   Calculator,
+  Keyboard,
 } from "lucide-react";
 import { PiHeadCircuit } from "react-icons/pi";
 import { HexdumpViewer, type MapRegion } from "@/components/hexdump-viewer";
@@ -66,6 +67,7 @@ import FloatingLines from "@/components/FloatingLines";
 import ZedGradientDefs, { ZedFileIcon } from "@/components/zed-gradient-defs";
 import { ChecksumModal } from "@/components/checksum-modal";
 import { MappackExportModal } from "@/components/mappack-export-modal";
+import { ShortcutHelpModal } from "@/components/shortcut-help-modal";
 import { MODAL_GLASS, MODAL_GLASS_LIGHT, TOAST_GLASS, TOAST_GLASS_LIGHT } from "@/lib/modal-glass";
 import { StyledSelect } from "@/components/styled-select";
 import { formatEcuWithManufacturer } from "@/lib/ecu-manufacturer";
@@ -6208,6 +6210,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   // Menu du bouton Outils (sidebar dépliée ou repliée) : fermé au clic
   // ailleurs ou à l'action choisie
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const toolsMenuRef = useRef<HTMLDivElement | null>(null);
   const toolsMenuCollapsedRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -6220,6 +6223,17 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [toolsMenuOpen]);
+
+  useEffect(() => {
+    const handleHelpShortcut = (e: KeyboardEvent) => {
+      if (e.key !== "F1") return;
+      e.preventDefault();
+      e.stopPropagation();
+      setShortcutHelpOpen(true);
+    };
+    window.addEventListener("keydown", handleHelpShortcut);
+    return () => window.removeEventListener("keydown", handleHelpShortcut);
+  }, []);
   const openAtdcTool = () => {
     setToolsMenuOpen(false);
     setAtdcToolOpen(true);
@@ -6262,6 +6276,17 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
       >
         <Calculator className="w-4 h-4 text-violet-400" />
         <span className="text-sm">Calculateur ATDC</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => {
+          setToolsMenuOpen(false);
+          setShortcutHelpOpen(true);
+        }}
+        className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+      >
+        <Keyboard className="w-4 h-4 text-violet-400" />
+        <span className="text-sm">Guide & raccourcis <span className="opacity-50">F1</span></span>
       </button>
     </div>
   );
@@ -7667,6 +7692,13 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         }}>
           <div className="flex-1 overflow-hidden relative min-h-0" ref={workspaceRef}>
             {/* Settings Menu Overlay */}
+            <ShortcutHelpModal
+              open={shortcutHelpOpen}
+              onClose={() => setShortcutHelpOpen(false)}
+              theme={theme}
+              version="1.16.0"
+            />
+
             <SettingsMenu
               isOpen={isSettingsOpen}
               onClose={handleCloseSettings}

@@ -13,6 +13,7 @@ import { resolveMapCellLayout, resolveAxisLabels, resolveAxisSources } from "@/l
 import { getMapValueRange, clampMapValue } from "@/lib/map-value-range";
 import { gridToText, parseGridText } from "@/lib/clipboard-grid";
 import { readSystemClipboardText, writeSystemClipboardText } from "@/lib/system-clipboard";
+import { Map3DMappingEditor } from "@/components/map-3d-mapping-editor";
 
 // Import Plotly dynamiquement pour ├®viter les probl├¿mes SSR
 import dynamic from "next/dynamic";
@@ -522,6 +523,10 @@ interface MapViewerProps {
     plot3DData: any[];
     xAxisLabels: string[];
     yAxisLabels: string[];
+    mapValues: number[][];
+    xAxisLabel: string;
+    yAxisLabel: string;
+    mapName: string;
     canShow3D: boolean;
   }) => void;
   // Callback pour ouvrir le modal Properties
@@ -3715,6 +3720,11 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     });
   };
 
+  const updateDisplayCellValue = useCallback((displayRow: number, displayCol: number, value: number) => {
+    const mapped = toMapCoords(displayRow, displayCol);
+    updateCellValue(mapped.row, mapped.col, value);
+  }, [toMapCoords]);
+  
   const handlePromptEdit = (displayRow: number, displayCol: number, value: number) => {
     setValuePrompt({
       title: t.mapViewer.editCellTitle,
@@ -4283,6 +4293,10 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       plot3DData,
       xAxisLabels: displayXAxisLabels,
       yAxisLabels: displayYAxisLabels,
+      mapValues: displayMapValues.map((row) => [...row]),
+      xAxisLabel: parseAxisUnits().xLabel,
+      yAxisLabel: parseAxisUnits().yLabel,
+      mapName: mapData.name || "",
       canShow3D: displayMapValues.length > 1,
     });
     // plot3DData / display* are intentionally NOT in the deps: the signature
@@ -4541,6 +4555,28 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     <span className="text-[10px] px-1.5 opacity-70">Clic = sélectionner · double-clic = valeur</span>
   )}
 </div>
+              {mapping3DMode ? (
+                <Map3DMappingEditor
+                  values={displayMapValues}
+                  minValue={valueRange.min}
+                  maxValue={valueRange.max}
+                  selectedCell={selected3DCell}
+                  onSelectCell={(cell) => {
+                    const mapped = toMapCoords(cell.row, cell.col);
+                    const key = getCellKey(mapped.row, mapped.col);
+                    keyboardCursorRef.current = { row: cell.row, col: cell.col };
+                    setSelected3DCell(cell);
+                    setSelectedXAxisCells(new Set());
+                    setSelectedYAxisCells(new Set());
+                    setSelectedCells(new Set([key]));
+                  }}
+                  onChangeCell={updateDisplayCellValue}
+                  xLabels={displayXAxisLabels}
+                  yLabels={displayYAxisLabels}
+                  decimals={cellDecimals}
+                  theme={theme}
+                />
+              ) : (
               <Plot
                 key={`3d-${mapData.address}`}
                 data={plot3DRenderData}
@@ -4596,6 +4632,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
                       onDoubleClick={handlePlot3DDoubleClick}
                       onRelayout={handlePlotlyRelayout}
               />
+              )}
             </div>
             )}
 

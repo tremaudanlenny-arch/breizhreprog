@@ -4775,6 +4775,24 @@ function EditorPageContent() {
     });
   }, [pushMapEditHistory, mapAxisLabels]);
 
+  const handleCalibrationRampApply = useCallback((mapAddress: number, changes: Record<string, number>) => {
+    if (!Object.keys(changes).length) return;
+    if (!restoringMapHistoryRef.current) {
+      pushMapEditHistory(allMapModifications, mapAxisLabels);
+    }
+    setAllMapModifications((prev) => {
+      const next = new Map(prev);
+      const merged = { ...(prev.get(mapAddress) || {}), ...changes };
+      next.set(mapAddress, merged);
+      return next;
+    });
+    setHasUnsavedChanges(true);
+    toast({
+      title: "Générateur de rampe",
+      description: String(Object.keys(changes).length) + " cellule(s) modifiée(s) dans la sélection.",
+    });
+  }, [allMapModifications, mapAxisLabels, pushMapEditHistory, toast]);
+
   const handleInjectionCalculatorApply = useCallback((result: InjectionApplyResult) => {
     if (!restoringMapHistoryRef.current) {
       pushMapEditHistory(allMapModifications, mapAxisLabels);
@@ -8900,6 +8918,10 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         <CalibrationMathToolModal
           theme={theme}
           tool={calibrationMathTool}
+          durationMaps={atdcSourceMaps}
+          snapshots={mapPlot3DDataRef.current}
+          selection={globalCursorInfo}
+          onApplyRamp={handleCalibrationRampApply}
           onClose={() => setCalibrationMathTool(null)}
         />
       )}

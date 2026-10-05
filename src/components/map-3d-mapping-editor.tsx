@@ -81,6 +81,8 @@ function MappingPoint({
     <group position={position}>
       {/* Gros volume de sélection, sans depth test : le point reste cliquable
           même quand la surface ou la grille passe devant à l'écran. */}
+      {/* Surface de saisie dédiée : le sol et la grille ont leur raycast
+          désactivé plus bas, donc seule cette poignée reçoit les clics. */}
       <mesh
         renderOrder={1000}
         onPointerDownCapture={(event) => {
@@ -100,20 +102,22 @@ function MappingPoint({
           onLeave();
         }}
       >
-        <sphereGeometry args={[0.28, 18, 18]} />
-        <meshBasicMaterial transparent opacity={0.01} depthTest={false} depthWrite={false} />
+        <sphereGeometry args={[0.32, 20, 20]} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={selected ? 0.28 : 0.12}
+          depthTest={false}
+          depthWrite={false}
+        />
       </mesh>
 
-      {/* Poignée visible : elle est volontairement plus grosse que l'ancienne
-          bille pour qu'on puisse réellement "prendre" un point à la souris. */}
+      {/* Poignée visible : assez grosse pour être attrapée sans viser au pixel. */}
       <mesh renderOrder={1001}>
-        <sphereGeometry args={[selected ? 0.14 : 0.105, selected ? 22 : 16, selected ? 22 : 16]} />
-        <meshStandardMaterial
-          color={color}
-          emissive={selected ? "#ffffff" : color}
-          emissiveIntensity={selected ? 1.2 : 0.3}
-          roughness={0.3}
-          metalness={0.1}
+        <sphereGeometry args={[selected ? 0.16 : 0.12, selected ? 24 : 18, selected ? 24 : 18]} />
+        <meshBasicMaterial
+          color={selected ? "#ffffff" : color}
+          transparent={false}
           depthTest={false}
           depthWrite={false}
         />
@@ -213,15 +217,15 @@ export function Map3DMappingEditor({
     const up = () => endDrag();
     const cancel = () => endDrag();
 
-    window.addEventListener("pointermove", move, { passive: true });
-    window.addEventListener("pointerup", up, { once: true });
-    window.addEventListener("pointercancel", cancel, { once: true });
+    window.addEventListener("pointermove", move, { capture: true, passive: false });
+    window.addEventListener("pointerup", up, { capture: true, once: true });
+    window.addEventListener("pointercancel", cancel, { capture: true, once: true });
 
     document.body.style.cursor = "ns-resize";
     return () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", cancel, true);
       document.body.style.cursor = "default";
     };
   }, [dragging, effectiveMin, effectiveMax, onChangeCell, valueRange]);
@@ -462,12 +466,18 @@ export function Map3DMappingEditor({
         <pointLight position={[-4, 2, 4]} intensity={1.2} color="#a855f7" />
 
         <group>
-          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -0.02]} renderOrder={0}>
+          <mesh
+            raycast={() => null}
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[0, 0, -0.02]}
+            renderOrder={0}
+          >
             <planeGeometry args={[WORLD_WIDTH + 0.6, WORLD_DEPTH + 0.6]} />
             <meshBasicMaterial color={surfaceColor} transparent opacity={0.26} />
           </mesh>
 
           <Grid
+            raycast={() => null}
             args={[WORLD_WIDTH, WORLD_DEPTH]}
             cellSize={Math.max(0.12, Math.min(0.55, WORLD_WIDTH / Math.max(values[0]?.length ?? 1, 1)))}
             sectionSize={1}

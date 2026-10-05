@@ -10,7 +10,7 @@ export type CalibrationMathTool =
   | "injection-duration"
   | "ramp";
 
-type DurationMap = {
+type ToolMap = {
   name: string;
   address: number;
 };
@@ -37,10 +37,12 @@ type SelectionInfo = {
 type Props = {
   theme: "default" | "light" | "oled";
   tool: CalibrationMathTool;
-  durationMaps?: DurationMap[];
+  durationMaps?: ToolMap[];
+  mafMaps?: ToolMap[];
   snapshots?: Map<number, Snapshot>;
   selection?: SelectionInfo;
   onApplyRamp?: (mapAddress: number, changes: Record<string, number>) => void;
+  onApplyChanges?: (mapAddress: number, changes: Record<string, number>) => void;
   onClose: () => void;
 };
 
@@ -92,33 +94,32 @@ const bracket = (axis: number[], target: number) => {
     : { i0: axis.length - 1 - j, i1: axis.length - 1 - (j + 1), t };
 };
 
-const sampleDuration = (
+const sampleMap = (
   values: number[][],
   xAxis: number[],
   yAxis: number[],
-  rpm: number,
-  iq: number,
+  x: number,
+  y: number,
   xKind: string,
   yKind: string,
 ) => {
   if (!values.length || !values[0]?.length) return NaN;
-
-  const xTarget = xKind === "rpm" ? rpm : iq;
-  const yTarget = yKind === "rpm" ? rpm : iq;
+  const xTarget = xKind === "rpm" ? x : xKind === "iq" ? y : x;
+  const yTarget = yKind === "rpm" ? x : yKind === "iq" ? y : y;
   const xb = bracket(xAxis, xTarget);
   const yb = bracket(yAxis, yTarget);
   if (!xb || !yb) return NaN;
-
   const q11 = values[yb.i0]?.[xb.i0];
   const q21 = values[yb.i0]?.[xb.i1];
   const q12 = values[yb.i1]?.[xb.i0];
   const q22 = values[yb.i1]?.[xb.i1];
   if (![q11, q21, q12, q22].every(Number.isFinite)) return NaN;
-
   const a = q11 + (q21 - q11) * xb.t;
   const b = q12 + (q22 - q12) * xb.t;
   return a + (b - a) * yb.t;
 };
+
+
 
 function Field({
   label,
@@ -152,9 +153,11 @@ export function CalibrationMathToolModal({
   theme,
   tool,
   durationMaps = [],
+  mafMaps = [],
   snapshots,
   selection,
   onApplyRamp,
+  onApplyChanges,
   onClose,
 }: Props) {
   const light = theme === "light";
@@ -163,13 +166,15 @@ export function CalibrationMathToolModal({
   const border = light ? "rgba(17,24,39,.12)" : "rgba(168,85,247,.22)";
 
   const [durationAddress, setDurationAddress] = useState(durationMaps[0]?.address ?? 0);
+  const [mafAddress, setMafAddress] = useState(mafMaps[0]?.address ?? 0);
   const [iq, setIq] = useState("50");
   const [rpm, setRpm] = useState("3000");
   const [direction, setDirection] = useState<"iq-to-duration" | "duration-to-iq">("iq-to-duration");
   const [duration, setDuration] = useState("10");
 
-  const [afr, setAfr] = useState("14.7");
-  const [airMass, setAirMass] = useState("1000");
+  const [targetAfr, setTargetAfr] = useState("18");
+  const [afrRpmFrom, setAfrRpmFrom] = useState("1500");
+  const [afrRpmTo, setAfrRpmTo] = useState("4500");
 
   const [injectorFlow, setInjectorFlow] = useState("50");
   const [refPressure, setRefPressure] = useState("1000");
@@ -185,59 +190,78 @@ export function CalibrationMathToolModal({
   const [copied, setCopied] = useState("");
 
   const selectedDuration = snapshots?.get(durationAddress);
-  const durationCalculation = useMemo(() => {
-    if (!selectedDuration) return null;
+  const selectedMaf = snapshots?.get(mafAddress);
 
-    const values = selectedDuration.sourceMapValues ?? selectedDuration.mapValues;
-    const xAxis = axisNumbers(selectedDuration.sourceXAxisLabels ?? selectedDuration.xAxisLabels);
-    const yAxis = axisNumbers(selectedDuration.sourceYAxisLabels ?? selectedDuration.yAxisLabels);
-    const xKind = axisKind(selectedDuration.xAxisLabel, xAxis);
-    const yKind = axisKind(selectedDuration.yAxisLabel, yAxis);
-    const rpmValue = num(rpm);
-    const iqValue = num(iq);
-    const durationValue = num(duration);
+  const afrCalculation = useMemo(() => {
+    if (!selectedDuration || !selectedMaf) return null;
 
-    if (direction === "iq-to-duration") {
-      return {
-        rpmValue,
-        iqValue,
-        result: sampleDuration(values, xAxis, yAxis, rpmValue, iqValue, xKind, yKind),
-        xKind,
-        yKind,
-      };
+    const durationValues = selectedDuration.sourceMapValues ?? selectedDuration.mapValues;
+    const durationX = axisNumbers(selectedDuration.sourceXAxisLabels ?? selectedDuration.xAxisLabels);
+    const durationY = axisNumbers(selectedDuration.sourceYAxisLabels ?? selectedDuration.yAxisLabels);
+    const durationXKind = axisKind(selectedDuration.xAxisLabel, durationX);
+    const durationYKind = axisKind(selectedDuration.yAxisLabel, durationY);
+
+    const mafValues = selectedMaf.sourceMapValues ?? selectedMaf.mapValues;
+    const mafX = axisNumbers(selectedMaf.sourceXAxisLabels ?? selectedMaf.xAxisLabels);
+    const mafY = axisNumbers(selectedMaf.sourceYAxisLabels ?? selectedMaf.yAxisLabels);
+    const mafXKind = axisKind(selectedMaf.xAxisLabel, mafX);
+    const mafYKind = axisKind(selectedMaf.yAxisLabel, mafY);
+
+    const from = num(afrRpmFrom);
+    const to = num(afrRpmTo);
+    const afrTarget = num(targetAfr);
+    const changes: Record<string, number> = [];
+    let factorSum = 0;
+    let factorCount = 0;
+
+    if (!(from <= to) || !(afrTarget > 0)) {
+      return { changes: {}, count: 0, averageFactor: NaN, durationXKind, durationYKind, mafXKind, mafYKind };
     }
 
-    const iqCandidates = xKind === "iq" ? xAxis : yKind === "iq" ? yAxis : [];
-    if (!iqCandidates.length) return { rpmValue, iqValue, result: NaN, xKind, yKind };
+    const rows = durationValues.length;
+    const cols = durationValues[0]?.length ?? 0;
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const cellDuration = durationValues[row]?.[col];
+        if (!Number.isFinite(cellDuration)) continue;
 
-    const samples = iqCandidates.map((candidate) => ({
-      iq: candidate,
-      duration: sampleDuration(values, xAxis, yAxis, rpmValue, candidate, xKind, yKind),
-    })).filter((item) => Number.isFinite(item.duration));
+        const xValue = durationX[col];
+        const yValue = durationY[row];
+        const rpmValue =
+          durationXKind === "rpm" ? xValue :
+          durationYKind === "rpm" ? yValue : NaN;
+        const iqValue =
+          durationXKind === "iq" ? xValue :
+          durationYKind === "iq" ? yValue : NaN;
 
-    if (samples.length < 2) return { rpmValue, iqValue, result: NaN, xKind, yKind };
+        if (!Number.isFinite(rpmValue) || !Number.isFinite(iqValue)) continue;
+        if (rpmValue < from || rpmValue > to || iqValue <= 0) continue;
 
-    let best = samples[0];
-    for (const item of samples) {
-      if (Math.abs(item.duration - durationValue) < Math.abs(best.duration - durationValue)) best = item;
-    }
+        const airMass = sampleMap(mafValues, mafX, mafY, rpmValue, iqValue, mafXKind, mafYKind);
+        if (!Number.isFinite(airMass) || airMass <= 0) continue;
 
-    const sorted = [...samples].sort((a, b) => a.duration - b.duration);
-    let lower = sorted[0];
-    let upper = sorted[sorted.length - 1];
-    for (let i = 0; i < sorted.length - 1; i++) {
-      if (durationValue >= sorted[i].duration && durationValue <= sorted[i + 1].duration) {
-        lower = sorted[i];
-        upper = sorted[i + 1];
-        break;
+        const targetIq = airMass / afrTarget;
+        const factor = targetIq / iqValue;
+        if (!Number.isFinite(factor) || factor <= 0) continue;
+
+        const nextValue = cellDuration * factor;
+        changes[row + "-" + col] = nextValue;
+        factorSum += factor;
+        factorCount++;
       }
     }
-    const t = upper.duration === lower.duration
-      ? 0
-      : (durationValue - lower.duration) / (upper.duration - lower.duration);
-    const estimatedIq = lower.iq + (upper.iq - lower.iq) * t;
-    return { rpmValue, iqValue, result: estimatedIq, nearest: best.iq, xKind, yKind };
-  }, [selectedDuration, direction, rpm, iq, duration]);
+
+    return {
+      changes,
+      count: Object.keys(changes).length,
+      averageFactor: factorCount ? factorSum / factorCount : NaN,
+      durationXKind,
+      durationYKind,
+      mafXKind,
+      mafYKind,
+    };
+  }, [selectedDuration, selectedMaf, afrRpmFrom, afrRpmTo, targetAfr]);
+
 
   const ramp = useMemo(() => {
     const start = num(rampStart);
@@ -250,6 +274,11 @@ export function CalibrationMathToolModal({
       return start + (end - start) * shaped;
     });
   }, [rampStart, rampEnd, rampSteps, rampMode]);
+
+  const applyAfr = () => {
+    if (!selectedDuration || !onApplyChanges || !afrCalculation?.count) return;
+    onApplyChanges(selectedDuration === undefined ? durationAddress : durationAddress, afrCalculation.changes);
+  };
 
   const applyRamp = () => {
     if (!selection || !onApplyRamp || selection.selectedCells.length === 0 || ramp.length === 0) return;
@@ -314,27 +343,51 @@ export function CalibrationMathToolModal({
           </div>
         );
 
-      case "afr": {
-        const air = num(airMass);
-        const fuel = num(afr);
-        const result = air / fuel;
+      case "afr":
         return (
           <div className="space-y-4">
             <div className="rounded-lg border p-3 text-[10px]" style={{ borderColor: border }}>
-              Calcul direct diesel : <b>AFR = masse d'air / masse de carburant</b>.
+              L'outil modifie directement la map <b>Duration</b> entre les RPM choisis, en utilisant la map <b>MAF</b> sélectionnée.
             </div>
+
             <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Masse d'air" value={airMass} onChange={setAirMass} unit="mg/coup" />
-              <Field label="IQ carburant" value={afr} onChange={setAfr} unit="mg/coup" />
+              <label className="block">
+                <div className="mb-1 text-[11px] opacity-60">Map Duration</div>
+                <select value={durationAddress} onChange={(e) => setDurationAddress(Number(e.target.value))} className="w-full rounded-lg border bg-black/20 px-3 py-2 text-xs" style={{ borderColor: border }}>
+                  {durationMaps.map((map) => <option key={map.address} value={map.address}>{map.name}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <div className="mb-1 text-[11px] opacity-60">Map MAF</div>
+                <select value={mafAddress} onChange={(e) => setMafAddress(Number(e.target.value))} className="w-full rounded-lg border bg-black/20 px-3 py-2 text-xs" style={{ borderColor: border }}>
+                  {mafMaps.map((map) => <option key={map.address} value={map.address}>{map.name}</option>)}
+                </select>
+              </label>
             </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Field label="AFR cible" value={targetAfr} onChange={setTargetAfr} unit=":1" />
+              <Field label="RPM début" value={afrRpmFrom} onChange={setAfrRpmFrom} unit="tr/min" />
+              <Field label="RPM fin" value={afrRpmTo} onChange={setAfrRpmTo} unit="tr/min" />
+            </div>
+
             <div className="rounded-lg border p-4" style={{ borderColor: border }}>
-              <div className="text-[10px] opacity-50">AFR calculé</div>
-              <div className="mt-1 text-3xl font-black">{fmt(result, 2)} : 1</div>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div><div className="text-[10px] opacity-50">Cellules</div><div className="mt-1 text-xl font-black">{afrCalculation?.count ?? 0}</div></div>
+                <div><div className="text-[10px] opacity-50">Facteur moyen</div><div className="mt-1 text-xl font-black">{fmt(afrCalculation?.averageFactor ?? NaN, 3)}×</div></div>
+                <div><div className="text-[10px] opacity-50">AFR cible</div><div className="mt-1 text-xl font-black">{fmt(num(targetAfr), 2)}:1</div></div>
+              </div>
             </div>
-            <div className="text-[10px]" style={{ color: muted }}>Exemple de test : 1000 mg d'air / 50 mg d'IQ = 20:1.</div>
+
+            <div className="text-[10px]" style={{ color: muted }}>
+              Le calcul utilise MAF / IQ cible. La durée est ajustée proportionnellement à IQ cible / IQ actuel.
+            </div>
+
+            <button type="button" disabled={!afrCalculation?.count || !onApplyChanges} onClick={applyAfr} className="w-full rounded-lg bg-gradient-to-r from-violet-600 to-fuchsia-500 px-4 py-3 text-xs font-black text-white disabled:opacity-35">
+              Appliquer à la map Duration
+            </button>
           </div>
         );
-      }
 
       case "injector-flow": {
         const q = num(injectorFlow);

@@ -4447,7 +4447,8 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         pointY.push(plotRow);
         pointZ.push(displayMapValues[row][col]);
         pointCustomData.push([row, col]);
-        pointSizes.push(selected3DCell?.row === row && selected3DCell?.col === col ? 8 : 5);
+        // Points volontairement plus gros pour rester attrapables, surtout après zoom.
+        pointSizes.push(selected3DCell?.row === row && selected3DCell?.col === col ? 13 : 9);
       }
     }
 
@@ -4464,7 +4465,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
           size: pointSizes,
           color: "#ffffff",
           opacity: 0.92,
-          line: { color: "#7c3aed", width: 1.5 },
+          line: { color: "#7c3aed", width: 2 },
         },
         hovertemplate: "Cellule %{customdata[0]}×%{customdata[1]}<br>Valeur: %{z:.2f}<extra></extra>",
         showlegend: false,
@@ -4478,9 +4479,9 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       if (!drag) return;
       event.preventDefault();
       const range = Math.max(valueRange.max - valueRange.min, 1);
-      // Réglage fin : ~1500 px pour traverser toute la plage, avec Shift encore plus précis.
-      // La valeur suit la résolution de la map via updateCellValue.
-      const sensitivity = range / (event.shiftKey ? 12000 : 6000);
+      // Déplacement ultra-fin : une très grande course de souris est nécessaire
+      // pour parcourir toute la plage. Shift passe en mode "micro-lissage".
+      const sensitivity = range / (event.shiftKey ? 50000 : 20000);
       updateDisplayCellValue(drag.row, drag.col, drag.startValue - (event.clientY - drag.startY) * sensitivity);
     };
     const up = () => {

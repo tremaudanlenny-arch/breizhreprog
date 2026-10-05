@@ -175,6 +175,7 @@ export function Map3DMappingEditor({
   const [editText, setEditText] = useState("");
   const [selectedCells, setSelectedCells] = useState<Set<string>>(new Set());
   const [percentValue, setPercentValue] = useState(5);
+  const [historyVersion, setHistoryVersion] = useState(0);
   const historyRef = useRef<number[][][]>([]);
   const futureRef = useRef<number[][][]>([]);
   const dragRef = useRef<{ row: number; col: number; startY: number; startValue: number; pointerId: number } | null>(null);
@@ -321,6 +322,7 @@ export function Map3DMappingEditor({
   const pushHistory = () => {
     historyRef.current = [...historyRef.current.slice(-30), values.map((row) => [...row])];
     futureRef.current = [];
+    setHistoryVersion((version) => version + 1);
   };
 
   const applyChanges = (changes: Array<{ row: number; col: number; value: number }>) => {
@@ -353,6 +355,7 @@ export function Map3DMappingEditor({
     if (!previous) return;
     futureRef.current = [...futureRef.current.slice(-30), values.map((row) => [...row])];
     restoreSnapshot(previous);
+    setHistoryVersion((version) => version + 1);
   };
 
   const redo = () => {
@@ -360,6 +363,7 @@ export function Map3DMappingEditor({
     if (!next) return;
     historyRef.current = [...historyRef.current.slice(-30), values.map((row) => [...row])];
     restoreSnapshot(next);
+    setHistoryVersion((version) => version + 1);
   };
 
   const applySelectionOperation = (
@@ -483,6 +487,25 @@ export function Map3DMappingEditor({
     return () => window.removeEventListener("keydown", onKey);
   });
 
+  // Pendant un drag, le pointeur peut traverser l'espace entre deux poignées.
+  // Le plan transparent ci-dessous transforme alors la position 3D en cellule
+  // la plus proche, ce qui permet de réellement "peindre" une courbe continue.
+  const brushCellFromPoint = (x: number, y: number) => {
+    const rows = values.length;
+    const cols = values[0]?.length ?? 0;
+    if (!rows || !cols) return null;
+    const col = clamp(Math.round(((x / WORLD_WIDTH) + 0.5) * Math.max(cols - 1, 0)), 0, cols - 1);
+    const row = clamp(Math.round((0.5 - (y / WORLD_DEPTH)) * Math.max(rows - 1, 0)), 0, rows - 1);
+    return { row, col };
+  };
+
+  const handleBrushPlaneMove = (event: ThreeEvent<PointerEvent>) => {
+    if (!draggingRef.current) return;
+    event.stopPropagation();
+    const cell = brushCellFromPoint(event.point.x, event.point.y);
+    if (cell) applyBrushValue(cell, event.clientY, event.shiftKey);
+  };
+
   const applyExactValue = () => {
     if (!selectedPoint) return;
     const parsed = Number(editText.replace(",", "."));
@@ -537,6 +560,15 @@ export function Map3DMappingEditor({
             <meshBasicMaterial color={surfaceColor} transparent opacity={0.26} />
           </mesh>
 
+          <mesh
+            rotation={[-Math.PI / 2, 0, 0]}
+            position={[0, 0, -0.03]}
+            onPointerMove={handleBrushPlaneMove}
+            onPointerOver={handleBrushPlaneMove}
+          >
+            <planeGeometry args={[WORLD_WIDTH + 0.6, WORLD_DEPTH + 0.6]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+          </mesh>
           <Grid
             raycast={() => null}
             args={[WORLD_WIDTH, WORLD_DEPTH]}
@@ -661,6 +693,7 @@ export function Map3DMappingEditor({
             <div className="mt-1 flex gap-1">
               <button type="button" disabled={!historyRef.current.length} className="rounded-md bg-white/10 px-2 py-1 text-[9px] disabled:opacity-30" onClick={undo}>↶ Undo</button>
               <button type="button" disabled={!futureRef.current.length} className="rounded-md bg-white/10 px-2 py-1 text-[9px] disabled:opacity-30" onClick={redo}>↷ Redo</button>
+              <span key={historyVersion} className="ml-1 text-[9px] text-white/35">{historyRef.current.length} / {futureRef.current.length}</span>
             </div>
           </div>
         )}

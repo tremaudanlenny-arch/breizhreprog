@@ -192,6 +192,60 @@ export function CalibrationMathToolModal({
   const selectedDuration = snapshots?.get(durationAddress);
   const selectedMaf = snapshots?.get(mafAddress);
 
+  const durationCalculation = useMemo(() => {
+    if (!selectedDuration) return null;
+
+    const values = selectedDuration.sourceMapValues ?? selectedDuration.mapValues;
+    const xAxis = axisNumbers(selectedDuration.sourceXAxisLabels ?? selectedDuration.xAxisLabels);
+    const yAxis = axisNumbers(selectedDuration.sourceYAxisLabels ?? selectedDuration.yAxisLabels);
+    const xKind = axisKind(selectedDuration.xAxisLabel, xAxis);
+    const yKind = axisKind(selectedDuration.yAxisLabel, yAxis);
+    const rpmValue = num(rpm);
+    const iqValue = num(iq);
+    const durationValue = num(duration);
+
+    if (direction === "iq-to-duration") {
+      return {
+        rpmValue,
+        iqValue,
+        result: sampleMap(values, xAxis, yAxis, rpmValue, iqValue, xKind, yKind),
+        xKind,
+        yKind,
+      };
+    }
+
+    const iqCandidates = xKind === "iq" ? xAxis : yKind === "iq" ? yAxis : [];
+    if (!iqCandidates.length) return { rpmValue, iqValue, result: NaN, xKind, yKind };
+
+    const samples = iqCandidates.map((candidate) => ({
+      iq: candidate,
+      duration: sampleMap(values, xAxis, yAxis, rpmValue, candidate, xKind, yKind),
+    })).filter((item) => Number.isFinite(item.duration));
+
+    if (samples.length < 2) return { rpmValue, iqValue, result: NaN, xKind, yKind };
+
+    const sorted = [...samples].sort((a, b) => a.duration - b.duration);
+    let lower = sorted[0];
+    let upper = sorted[sorted.length - 1];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      if (durationValue >= sorted[i].duration && durationValue <= sorted[i + 1].duration) {
+        lower = sorted[i];
+        upper = sorted[i + 1];
+        break;
+      }
+    }
+    const t = upper.duration === lower.duration
+      ? 0
+      : (durationValue - lower.duration) / (upper.duration - lower.duration);
+    return {
+      rpmValue,
+      iqValue,
+      result: lower.iq + (upper.iq - lower.iq) * t,
+      xKind,
+      yKind,
+    };
+  }, [selectedDuration, direction, rpm, iq, duration]);
+
   const afrCalculation = useMemo(() => {
     if (!selectedDuration || !selectedMaf) return null;
 
@@ -210,7 +264,7 @@ export function CalibrationMathToolModal({
     const from = num(afrRpmFrom);
     const to = num(afrRpmTo);
     const afrTarget = num(targetAfr);
-    const changes: Record<string, number> = [];
+    const changes: Record<string, number> = {};
     let factorSum = 0;
     let factorCount = 0;
 

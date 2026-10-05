@@ -63,7 +63,7 @@ export function ShortcutHelpModal({
   open,
   onClose,
   theme = "default",
-  version = "1.18.2",
+  version = "1.18.3",
 }: ShortcutHelpModalProps) {
   useEffect(() => {
     if (!open) return;

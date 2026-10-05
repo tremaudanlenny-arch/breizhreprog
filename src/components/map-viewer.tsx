@@ -3381,14 +3381,14 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
             // axes in the same orientation. In the screenshotmed EDC15 case:
             // Duration = X RPM / Y IQ, while SOI = X IQ / Y RPM.
             // Resolve RPM/IQ first, then query SOI using its own axis order.
-            const axisKind = (labels: string[]) => {
-              const text = labels.join(" ").toLowerCase();
+            const axisKind = (axisLabel: string | undefined, labels: string[]) => {
+              const text = ((axisLabel || "") + " " + labels.join(" ")).toLowerCase();
               if (text.includes("rpm") || text.includes("engine speed")) return "rpm";
               if (text.includes("iq") || text.includes("mg/st") || text.includes("mg/stroke")) return "iq";
               return "other";
             };
-            const durationXKind = axisKind(durationX);
-            const durationYKind = axisKind(durationY);
+            const durationXKind = axisKind(durationSnapshot?.xAxisLabel, durationX);
+            const durationYKind = axisKind(durationSnapshot?.yAxisLabel, durationY);
             const rpmValue =
               durationXKind === "rpm" ? rawX :
               durationYKind === "rpm" ? rawY : rawX;
@@ -3397,8 +3397,8 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
               durationYKind === "iq" ? rawY : rawY;
 
             if (soiValues?.length && soiX.length && soiY.length) {
-              const soiXKind = axisKind(soiX);
-              const soiYKind = axisKind(soiY);
+              const soiXKind = axisKind(soiSnapshot?.xAxisLabel, soiX);
+              const soiYKind = axisKind(soiSnapshot?.yAxisLabel, soiY);
               const soiQueryX =
                 soiXKind === "rpm" ? rpmValue :
                 soiXKind === "iq" ? iqValue :
@@ -3410,9 +3410,10 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
               soiValue = sample2d(soiValues, soiX, soiY, soiQueryX, soiQueryY);
             }
 
-            // Fallback: read the actual SOI map directly from the binary.
-            // Duration edits remain live even when the SOI map is not open.
-            if (soiValue == null && atdcSoiMap && soiLayout) {
+            // Fallback only when no live SOI snapshot exists. The primary
+            // path above uses the physical RPM/IQ axes and is the authoritative
+            // calculation for the virtual ATDC map.
+            if (soiValue == null && atdcSoiMap && soiLayout && !(soiValues?.length)) {
               const sourceRows = durationValues.length;
               const sourceCols = durationValues[0]?.length ?? 0;
               const soiRow = sourceRows > 1 && soiLayout.rows > 1

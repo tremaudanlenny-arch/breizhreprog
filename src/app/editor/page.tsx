@@ -2381,6 +2381,9 @@ function EditorPageContent() {
     xAxisLabels: string[];
     yAxisLabels: string[];
     mapValues: number[][];
+    sourceXAxisLabels: string[];
+    sourceYAxisLabels: string[];
+    sourceMapValues: number[][];
     xAxisLabel: string;
     yAxisLabel: string;
     mapName: string;
@@ -6811,6 +6814,9 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     xAxisLabels: string[];
     yAxisLabels: string[];
     mapValues: number[][];
+    sourceXAxisLabels: string[];
+    sourceYAxisLabels: string[];
+    sourceMapValues: number[][];
     xAxisLabel: string;
     yAxisLabel: string;
     mapName: string;

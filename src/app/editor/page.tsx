@@ -1790,7 +1790,9 @@ function PreviewWindow({
 function stripSoiTag<T extends { maps?: any[] } | null | undefined>(detectionResults: T): T {
   if (!detectionResults || !Array.isArray(detectionResults.maps)) return detectionResults;
 
-  const baseMaps = detectionResults.maps.map((m: any) =>
+  const baseMaps = detectionResults.maps
+    .filter((m: any) => m?.map_type !== "atdc_virtual")
+    .map((m: any) =>
     typeof m?.name === "string" && m.name.includes(" (SOI)") && !m.external_source
       ? { ...m, name: m.name.replace(" (SOI)", "") }
       : m

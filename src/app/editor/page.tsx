@@ -8812,6 +8812,18 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
             setCalibrationToolsOpen(false);
             handleMapClick(map as MapData);
           }}
+          onRestoreSnapshot={(changes) => {
+            if (!restoringMapHistoryRef.current) {
+              pushMapEditHistory(allMapModifications, mapAxisLabels);
+            }
+            setAllMapModifications(new Map(changes));
+            setHasUnsavedChanges(true);
+            setCalibrationToolsOpen(false);
+            toast({
+              title: "Calibration Tools",
+              description: "Snapshot restauré. Les modifications sont de nouveau actives dans le projet.",
+            });
+          }}
           onClose={() => setCalibrationToolsOpen(false)}
         />
       )}

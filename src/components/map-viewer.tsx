@@ -2426,7 +2426,8 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       : mapData.address;
     const atdcSoiMap = isAtdcVirtual ? mapData.atdc_source_soi_map : undefined;
     const atdcSoiAddress = atdcSoiMap?.address ?? 0;
-    const cacheKey = getCacheKey(mapData.address, projectName, fileName) + (isAtdcVirtual ? `_soi_${atdcSoiAddress}` : "");
+    const cacheKey = getCacheKey(mapData.address, projectName, fileName)
+      + (isAtdcVirtual ? `_soi_${atdcSoiAddress}_live_${atdcLiveSnapshotRevision}` : "");
     const fileDataHash = getFileDataHash(fileData, sourceMapAddress) + (isAtdcVirtual ? "_soi_" + getFileDataHash(fileData, atdcSoiAddress) : "");
     const cached = mapDataCache.get(cacheKey);
 

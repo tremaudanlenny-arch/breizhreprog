@@ -1,4 +1,4 @@
-name: Build & Publish Windows EXE
+name: Build Windows EXE
 
 on:
   push:
@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: breizhreprog-windows-${{ github.ref }}
@@ -26,7 +26,7 @@ env:
   NODE_VERSION: 24
 
 jobs:
-  publish-windows:
+  build-windows:
     runs-on: windows-latest
 
     steps:
@@ -52,16 +52,13 @@ jobs:
       - name: Install dependencies
         run: npm ci --prefer-offline --no-audit --no-fund
 
-      - name: Build and publish Windows installer
-        uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build Windows installer
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
         with:
-          tagName: v__VERSION__
-          releaseName: Breizh Reprog X Ninnin Projet Perf v__VERSION__
-          releaseBody: |
-            Breizh Reprog X Ninnin Projet Perf Windows installer.
-            This release is also used by the in-app automatic updater.
-          releaseDraft: false
-          prerelease: false
-          args: --bundles nsis
+          name: breizh-reprog-windows-installer
+          path: src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+          retention-days: 3

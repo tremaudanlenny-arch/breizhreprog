@@ -3943,6 +3943,123 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     const mapped = toMapCoords(displayRow, displayCol);
     updateCellValue(mapped.row, mapped.col, value);
   }, [toMapCoords]);
+
+  // Lissage de sélection façon éditeur de calibration :
+  // - 1 ligne / 1 colonne : interpolation linéaire entre les extrémités
+  // - bloc 2D : lissage gaussien pondéré (3x3) en plusieurs passes, en
+  //   conservant le contour sélectionné comme ancrage. Le calcul se fait
+  //   d'un seul coup pour éviter les courses entre plusieurs setState().
+  const smoothSelectedCells = useCallback(() => {
+    if (isAtdcVirtual || selectedCells.size < 3 || mapValues.length === 0) return 0;
+
+    const selected = new Set(selectedCells);
+    const cells = Array.from(selected).map((key) => key.split('-').map(Number) as [number, number]);
+    let minRow = Infinity, maxRow = -Infinity, minCol = Infinity, maxCol = -Infinity;
+    for (const [row, col] of cells) {
+      minRow = Math.min(minRow, row);
+      maxRow = Math.max(maxRow, row);
+      minCol = Math.min(minCol, col);
+      maxCol = Math.max(maxCol, col);
+    }
+
+    const original = mapValues.map((row) => [...row]);
+    let working = original.map((row) => [...row]);
+    const changes = new Map<string, number>();
+
+    // Cas 1D : on garde les extrémités et on interpole selon la vraie
+    // position des cellules sélectionnées (pas selon selectedCells.size).
+    if (minRow === maxRow || minCol === maxCol) {
+      const axisCells = cells
+        .filter(([row, col]) => minRow === maxRow ? row === minRow : col === minCol)
+        .sort((a, b) => (minRow === maxRow ? a[1] - b[1] : a[0] - b[0]));
+
+      if (axisCells.length >= 3) {
+        const [startR, startC] = axisCells[0];
+        const [endR, endC] = axisCells[axisCells.length - 1];
+        const startValue = original[startR]?.[startC] ?? 0;
+        const endValue = original[endR]?.[endC] ?? startValue;
+        for (let i = 1; i < axisCells.length - 1; i++) {
+          const [row, col] = axisCells[i];
+          const position = minRow === maxRow
+            ? (col - startC) / Math.max(1, endC - startC)
+            : (row - startR) / Math.max(1, endR - startR);
+          const value = clampValue(Math.round(startValue + (endValue - startValue) * position));
+          if (Math.abs(value - (original[row]?.[col] ?? value)) > 1e-6) changes.set(row + '-' + col, value);
+        }
+      }
+    } else {
+      // Cas 2D : on ancre le contour, puis on applique plusieurs passes
+      // d'un filtre bilinéaire/gaussien. C'est beaucoup plus stable que la
+      // simple moyenne des 4 voisins utilisée auparavant.
+      const kernel = [
+        [1, 2, 1],
+        [2, 4, 2],
+        [1, 2, 1],
+      ];
+      const isInterior = (row: number, col: number) =>
+        selected.has(row + '-' + col) &&
+        selected.has((row - 1) + '-' + col) &&
+        selected.has((row + 1) + '-' + col) &&
+        selected.has(row + '-' + (col - 1)) &&
+        selected.has(row + '-' + (col + 1));
+
+      // 4 passes donnent un lissage nettement plus proche d'un outil de
+      // smoothing de carto, tout en gardant les bords de la sélection fixes.
+      for (let pass = 0; pass < 4; pass++) {
+        const next = working.map((row) => [...row]);
+
+        for (let row = minRow + 1; row < maxRow; row++) {
+          for (let col = minCol + 1; col < maxCol; col++) {
+            if (!isInterior(row, col)) continue;
+
+            let weightedSum = 0;
+            let weightSum = 0;
+            for (let ky = -1; ky <= 1; ky++) {
+              for (let kx = -1; kx <= 1; kx++) {
+                const value = working[row + ky]?.[col + kx];
+                const weight = kernel[ky + 1][kx + 1];
+                if (typeof value === 'number' && Number.isFinite(value)) {
+                  weightedSum += value * weight;
+                  weightSum += weight;
+                }
+              }
+            }
+
+            if (weightSum > 0) {
+              const filtered = weightedSum / weightSum;
+              next[row][col] = clampValue(Math.round(working[row][col] * 0.25 + filtered * 0.75));
+            }
+          }
+        }
+
+        working = next;
+      }
+
+      for (const [row, col] of cells) {
+        const value = working[row]?.[col];
+        const before = original[row]?.[col];
+        if (typeof value === 'number' && typeof before === 'number' && Math.abs(value - before) > 1e-6) {
+          changes.set(row + '-' + col, value);
+        }
+      }
+    }
+
+    if (changes.size === 0) return 0;
+
+    setMapValues(working);
+    setChangedCells((prev) => {
+      const next = { ...prev };
+      for (const [key, value] of changes) {
+        const [row, col] = key.split('-').map(Number);
+        const originalValue = originalValuesRef.current?.[row]?.[col];
+        if (originalValue !== undefined && Math.abs(originalValue - value) < 1e-6) delete next[key];
+        else next[key] = value;
+      }
+      return next;
+    });
+
+    return changes.size;
+  }, [isAtdcVirtual, mapValues, selectedCells]);
   
   const handlePromptEdit = (displayRow: number, displayCol: number, value: number) => {
     setValuePrompt({
@@ -5314,51 +5431,11 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
                     <button
                       className="px-3 py-1.5 text-left rounded hover:bg-white/10 transition-colors"
                       onClick={() => {
-                        if (contextMenu.type === 'cell' && selectedCells.size > 2) {
-                          let minRow = 0xFFFF, maxRow = 0, minCol = 0xFFFF, maxCol = 0;
-                          selectedCells.forEach(key => {
-                            const [row, col] = key.split('-').map(Number);
-                            if (row > maxRow) maxRow = row;
-                            if (row < minRow) minRow = row;
-                            if (col > maxCol) maxCol = col;
-                            if (col < minCol) minCol = col;
-                          });
-                          if (maxCol === minCol) {
-                            const topValue = mapValues[maxRow]?.[maxCol] ?? 0;
-                            const bottomValue = mapValues[minRow]?.[maxCol] ?? 0;
-                            const cellCount = selectedCells.size;
-                            const diffValue = (topValue - bottomValue) / (cellCount - 1);
-                            for (let idx = 1; idx < cellCount - 1; idx++) {
-                              const newValue = Math.round(bottomValue + (idx * diffValue));
-                              updateCellValue(minRow + idx, maxCol, newValue);
-                            }
-                          } else if (maxRow === minRow) {
-                            const rightValue = mapValues[maxRow]?.[maxCol] ?? 0;
-                            const leftValue = mapValues[maxRow]?.[minCol] ?? 0;
-                            const cellCount = selectedCells.size;
-                            const diffValue = (rightValue - leftValue) / (cellCount - 1);
-                            for (let idx = 1; idx < cellCount - 1; idx++) {
-                              const newValue = Math.round(leftValue + (idx * diffValue));
-                              updateCellValue(minRow, minCol + idx, newValue);
-                            }
-                          } else {
-                            const currentValues = mapValues.map(row => [...row]);
-                            for (let tely = 1; tely < maxRow - minRow; tely++) {
-                              for (let telx = 1; telx < maxCol - minCol; telx++) {
-                                const currentRow = minRow + tely;
-                                const currentCol = minCol + telx;
-                                const valx1 = currentValues[currentRow]?.[currentCol - 1] ?? currentValues[currentRow]?.[minCol] ?? 0;
-                                const valx2 = currentValues[currentRow]?.[currentCol + 1] ?? currentValues[currentRow]?.[currentCol] ?? 0;
-                                const valy1 = currentValues[currentRow - 1]?.[currentCol] ?? currentValues[minRow]?.[currentCol] ?? 0;
-                                const valy2 = currentValues[currentRow + 1]?.[currentCol] ?? currentValues[currentRow]?.[currentCol] ?? 0;
-                                const valueX = (valx1 + valx2) / 2;
-                                const valueY = (valy1 + valy2) / 2;
-                                const newValue = Math.round((valueX + valueY) / 2);
-                                updateCellValue(currentRow, currentCol, newValue);
-                              }
-                            }
+                        if (contextMenu.type === 'cell') {
+                          const changed = smoothSelectedCells();
+                          if (changed > 0) {
+                            toast({ title: t.errors.smoothed, description: t.errors.selectionSmoothed });
                           }
-                          toast({ title: t.errors.smoothed, description: t.errors.selectionSmoothed });
                         }
                         setContextMenu(null);
                       }}
@@ -5967,75 +6044,19 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
               <div className="border-t border-gray-600 my-1" />
 
               <button
-                className="px-3 py-1.5 text-left rounded hover:bg-white/10 transition-colors"
-                onClick={() => {
-                  if (contextMenu.type === 'cell' && selectedCells.size > 2) {
-                    // Récupérer les limites de la sélection
-                    let minRow = 0xFFFF, maxRow = 0, minCol = 0xFFFF, maxCol = 0;
-
-                    selectedCells.forEach(key => {
-                      const [row, col] = key.split('-').map(Number);
-                      if (row > maxRow) maxRow = row;
-                      if (row < minRow) minRow = row;
-                      if (col > maxCol) maxCol = col;
-                      if (col < minCol) minCol = col;
-                    });
-
-                    if (maxCol === minCol) {
-                      // Une seule colonne sélectionnée - interpolation linéaire verticale
-                      const topValue = mapValues[maxRow]?.[maxCol] ?? 0;
-                      const bottomValue = mapValues[minRow]?.[maxCol] ?? 0;
-                      const cellCount = selectedCells.size;
-                      const diffValue = (topValue - bottomValue) / (cellCount - 1);
-
-                      for (let t = 1; t < cellCount - 1; t++) {
-                        const newValue = Math.round(bottomValue + (t * diffValue));
-                        updateCellValue(minRow + t, maxCol, newValue);
-                      }
-                    } else if (maxRow === minRow) {
-                      // Une seule ligne sélectionnée - interpolation linéaire horizontale
-                      const rightValue = mapValues[maxRow]?.[maxCol] ?? 0;
-                      const leftValue = mapValues[maxRow]?.[minCol] ?? 0;
-                      const cellCount = selectedCells.size;
-                      const diffValue = (rightValue - leftValue) / (cellCount - 1);
-
-                      for (let t = 1; t < cellCount - 1; t++) {
-                        const newValue = Math.round(leftValue + (t * diffValue));
-                        updateCellValue(minRow, minCol + t, newValue);
-                      }
-                    } else {
-                      // Bloc sélectionné - moyenne des 4 voisins (comme EDCSuite)
-                      // On copie les valeurs actuelles pour ne pas interférer pendant le calcul
-                      const currentValues = mapValues.map(row => [...row]);
-
-                      for (let tely = 1; tely < maxRow - minRow; tely++) {
-                        for (let telx = 1; telx < maxCol - minCol; telx++) {
-                          const currentRow = minRow + tely;
-                          const currentCol = minCol + telx;
-
-                          // Valeurs des voisins
-                          const valx1 = currentValues[currentRow]?.[currentCol - 1] ?? currentValues[currentRow]?.[minCol] ?? 0;
-                          const valx2 = currentValues[currentRow]?.[currentCol + 1] ?? currentValues[currentRow]?.[currentCol] ?? 0;
-                          const valy1 = currentValues[currentRow - 1]?.[currentCol] ?? currentValues[minRow]?.[currentCol] ?? 0;
-                          const valy2 = currentValues[currentRow + 1]?.[currentCol] ?? currentValues[currentRow]?.[currentCol] ?? 0;
-
-                          // Moyenne des voisins horizontaux et verticaux
-                          const valueX = (valx1 + valx2) / 2;
-                          const valueY = (valy1 + valy2) / 2;
-                          const newValue = Math.round((valueX + valueY) / 2);
-
-                          updateCellValue(currentRow, currentCol, newValue);
+                      className="px-3 py-1.5 text-left rounded hover:bg-white/10 transition-colors"
+                      onClick={() => {
+                        if (contextMenu.type === 'cell') {
+                          const changed = smoothSelectedCells();
+                          if (changed > 0) {
+                            toast({ title: t.errors.smoothed, description: t.errors.selectionSmoothed });
+                          }
                         }
-                      }
-                    }
-
-                    toast({ title: t.errors.smoothed, description: t.errors.selectionSmoothed });
-                  }
-                  setContextMenu(null);
-                }}
-              >
-                {t.mapViewer.smoothSelection}
-              </button>
+                        setContextMenu(null);
+                      }}
+                    >
+                      {t.mapViewer.smoothSelection}
+                    </button>
                 </>
               )}
 

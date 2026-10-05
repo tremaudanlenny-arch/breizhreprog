@@ -4308,65 +4308,30 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     [displayXAxisLabels, displayYAxisLabels]
   );
 
-  // Notifier le parent des données 3D quand elles changent (pour Preview window).
-  // We must NOT depend on `plot3DData`/`displayXAxisLabels`/`displayYAxisLabels`
-  // directly — those are fresh array references on every render of MapViewer,
-  // and the parent's handler bumps a state that re-renders us, which would
-  // create an infinite update loop and break the 3D preview's mouse
-  // controls. Instead, derive a content signature and only fire when it
-  // actually changes.
-  const lastPlot3DSignatureRef = useRef<string>("");
-  const plot3DSignature = useMemo(() => {
-    if (!onPlot3DDataChange) return "";
-    const xs = displayXAxisLabels.join("|");
-    const ys = displayYAxisLabels.join("|");
-    // Hash every cell so single-cell edits invalidate the signature.
-    // FNV-1a 32-bit on the row-major float bit pattern: cheap, ~10ns per
-    // cell on a hot path, no allocations.
-    let hash = 0x811c9dc5 >>> 0;
-    const buf = new ArrayBuffer(8);
-    const floats = new Float64Array(buf);
-    const ints = new Uint32Array(buf);
-    let rows = 0;
-    let cols = 0;
-    if (displayMapValues.length > 0) {
-      rows = displayMapValues.length;
-      cols = displayMapValues[0]?.length ?? 0;
-      for (let r = 0; r < rows; r++) {
-        const row = displayMapValues[r];
-        if (!row) continue;
-        for (let c = 0; c < cols; c++) {
-          floats[0] = row[c] ?? 0;
-          hash = Math.imul(hash ^ ints[0], 0x01000193);
-          hash = Math.imul(hash ^ ints[1], 0x01000193);
-        }
-      }
-    }
-    // theme et disableGraphColors changent la colorscale du plot3DData émis :
-    // sans eux dans la signature, la Preview gardait l'ancienne surface
-    // colorée quand on basculait « Disable 3D colors » (ou de thème).
-    return `${mapData.address}|${rows}x${cols}|${xs}|${ys}|${hash.toString(16)}|${theme}|${disableGraphColors ? 1 : 0}`;
-  }, [mapData.address, displayXAxisLabels, displayYAxisLabels, displayMapValues, onPlot3DDataChange, theme, disableGraphColors]);
-
+  // Publier l'état réellement affiché vers le parent dès qu'une cellule
+  // ou un axe change. Ce flux sert directement de source live à l'ATDC et
+  // au calculateur Injection : aucun hash/signature intermédiaire ne peut
+  // masquer une modification de cellule.
   useEffect(() => {
     if (!onPlot3DDataChange) return;
-    if (lastPlot3DSignatureRef.current === plot3DSignature) return;
-    lastPlot3DSignatureRef.current = plot3DSignature;
-
     onPlot3DDataChange(mapData.address, {
       plot3DData,
-      xAxisLabels: displayXAxisLabels,
-      yAxisLabels: displayYAxisLabels,
+      xAxisLabels: [...displayXAxisLabels],
+      yAxisLabels: [...displayYAxisLabels],
       mapValues: displayMapValues.map((row) => [...row]),
       xAxisLabel: parseAxisUnits().xLabel,
       yAxisLabel: parseAxisUnits().yLabel,
       mapName: mapData.name || "",
       canShow3D: displayMapValues.length > 1,
     });
-    // plot3DData / display* are intentionally NOT in the deps: the signature
-    // above gates whether the notification needs to happen.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plot3DSignature, mapData.address, onPlot3DDataChange]);
+  }, [
+    onPlot3DDataChange,
+    mapData.address,
+    plot3DData,
+    displayXAxisLabels,
+    displayYAxisLabels,
+    displayMapValues,
+  ]);
 
   // Mode 3D: structure alignée au layout principal
   if (viewMode === "3d") {

@@ -177,10 +177,12 @@ export function Map3DMappingEditor({
   const [percentValue, setPercentValue] = useState(5);
   const historyRef = useRef<number[][][]>([]);
   const futureRef = useRef<number[][][]>([]);
-  const dragRef = useRef<{ row: number; col: number; startY: number; startValue: number } | null>(null);
+  const dragRef = useRef<{ row: number; col: number; startY: number; startValue: number; pointerId: number } | null>(null);
   const brushStartValuesRef = useRef<Map<string, number>>(new Map());
   const draggingRef = useRef(false);
+  const dragHistoryPushedRef = useRef(false);
   const controlsRef = useRef<any>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const effectiveMin = Number.isFinite(minValue) ? minValue : 0;
   const effectiveMax = Number.isFinite(maxValue) && maxValue > effectiveMin ? maxValue : effectiveMin + 1;
@@ -201,9 +203,20 @@ export function Map3DMappingEditor({
   }, [values, effectiveMin, effectiveMax, valueRange]);
 
   const endDrag = () => {
+    const pointerId = dragRef.current?.pointerId;
+    if (pointerId !== undefined) {
+      try {
+        if (canvasRef.current?.hasPointerCapture(pointerId)) {
+          canvasRef.current.releasePointerCapture(pointerId);
+        }
+      } catch {
+        // Pointer capture may already have been released by the browser.
+      }
+    }
     dragRef.current = null;
     brushStartValuesRef.current.clear();
     draggingRef.current = false;
+    dragHistoryPushedRef.current = false;
     setDragging(false);
     if (controlsRef.current) controlsRef.current.enabled = true;
     document.body.style.cursor = "default";
@@ -258,6 +271,11 @@ export function Map3DMappingEditor({
     const point = cells.find((candidate) => candidate.row === cell.row && candidate.col === cell.col);
     if (!point) return;
 
+    if (!dragHistoryPushedRef.current) {
+      pushHistory();
+      dragHistoryPushedRef.current = true;
+    }
+
     draggingRef.current = true;
     brushStartValuesRef.current.clear();
     brushStartValuesRef.current.set(`${cell.row}-${cell.col}`, point.value);
@@ -266,8 +284,17 @@ export function Map3DMappingEditor({
       col: point.col,
       startY: event.clientY,
       startValue: point.value,
+      pointerId: event.pointerId,
     };
 
+    try {
+      canvasRef.current?.setPointerCapture(event.pointerId);
+    } catch {
+      // The browser may refuse capture during a synthetic event.
+    }
+
+    event.stopPropagation();
+    event.nativeEvent.preventDefault();
     if (controlsRef.current) controlsRef.current.enabled = false;
     setDragging(true);
     document.body.style.cursor = "ns-resize";
@@ -489,6 +516,11 @@ export function Map3DMappingEditor({
         camera={{ position: [7.5, -8, 6.4], fov: 42 }}
         dpr={[1, 2]}
         gl={{ antialias: true, alpha: true }}
+        onCreated={({ gl }) => {
+          canvasRef.current = gl.domElement;
+          gl.domElement.style.touchAction = "none";
+          gl.domElement.style.userSelect = "none";
+        }}
       >
         <ambientLight intensity={0.75} />
         <directionalLight position={[4, -4, 8]} intensity={1.5} />

@@ -2,10 +2,6 @@ name: Publish Breizh Reprog Windows
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - master
-
 permissions:
   contents: write
 

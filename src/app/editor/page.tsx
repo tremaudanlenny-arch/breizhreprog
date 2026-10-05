@@ -2108,7 +2108,6 @@ function EditorPageContent() {
   // ATDC tool: the derived map is ephemeral and never added to the sidebar.
   const [atdcToolOpen, setAtdcToolOpen] = useState(false);
   const [atdcSelectedSource, setAtdcSelectedSource] = useState<MapData | null>(null);
-  const [atdcToolMap, setAtdcToolMap] = useState<MapData | null>(null);
   const [atdcToolSoi, setAtdcToolSoi] = useState(90);
 
 
@@ -6062,11 +6061,12 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   // Toggle du bouton "inverser l'affichage" dans l'en-tête d'une map. Même
   // chemin que la fenêtre Propriétés : toute la famille suit.
   const handleToggleInvertDisplay = useCallback((mapAddress: number, invert: boolean) => {
-    const map = projectData?.detectionResults?.maps?.find((m: MapData) => m.address === mapAddress);
+    const map = projectData?.detectionResults?.maps?.find((m: MapData) => m.address === mapAddress)
+      ?? openMaps.find((m: MapData) => m.address === mapAddress);
     if (!map) return;
     const base = mapDisplaySettingsStore.get(mapAddress) ?? getDefaultMapDisplaySettings(map);
     handleSaveMapDisplaySettings(mapAddress, { ...base, invertDisplay: invert });
-  }, [projectData, mapDisplaySettingsStore, handleSaveMapDisplaySettings]);
+  }, [projectData, openMaps, mapDisplaySettingsStore, handleSaveMapDisplaySettings]);
 
   // Mémoire par calculateur : à l'ouverture d'un projet (ou quand l'option
   // est cochée), les écarts enregistrés pour ce type d'ECU sont appliqués
@@ -8273,55 +8273,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                 </div>
               )}
 
-              {atdcToolMap && projectData && (
-                <div
-                  data-map-address={atdcToolMap.address}
-                  style={{
-                    position: "absolute",
-                    top: 40,
-                    left: 60,
-                    width: "min(1100px, calc(100% - 100px))",
-                    height: "min(680px, calc(100% - 80px))",
-                    minWidth: 420,
-                    minHeight: 300,
-                    zIndex: 80,
-                    background: getWindowBg(),
-                    border: `1px solid ${getBorderColor()}`,
-                    borderRadius: 8,
-                    overflow: "hidden",
-                    boxShadow: "0 18px 50px rgba(0,0,0,0.35)",
-                  }}
-                  onMouseDown={() => setAtdcToolMap((m) => (m ? { ...m } : m))}
-                >
-                  <MapViewer
-                    key={`atdc-${atdcToolMap.address}-${atdcToolSoi}`}
-                    mapData={{ ...atdcToolMap, atdc_soi_default: atdcToolSoi }}
-                    fileData={projectData.file_data}
-                    projectName={projectData.project_name}
-                    fileName={projectData.file_name}
-                    viewMode="text"
-                    onClose={() => setAtdcToolMap(null)}
-                    theme={theme}
-                    disableTableColors={settings.disableTableColors}
-                    disableGraphColors={settings.disableGraphColors}
-                    allMaps={projectData.detectionResults.maps}
-                    ecuType={projectData.ecu_type}
-                    onOpenProperties={() => handleOpenMapProperties(atdcToolMap)}
-                    displaySettings={mapDisplaySettingsStore.get(atdcToolMap.address)}
-                    onAutoSize={(w, h) => {
-                      const workspace = workspaceRef.current?.getBoundingClientRect();
-                      if (!workspace) return;
-                      const width = Math.min(Math.max(420, w), workspace.width - 20);
-                      const height = Math.min(Math.max(260, h), workspace.height - 20);
-                      const el = document.querySelector<HTMLElement>(`[data-map-address="${atdcToolMap.address}"]`);
-                      if (el) {
-                        el.style.width = `${width}px`;
-                        el.style.height = `${height}px`;
-                      }
-                    }}
-                  />
-                </div>
-              )}
+
 
               {/* Fenêtre de puissance — flottante, dans le même container              {/* Fenêtre de puissance — flottante, dans le même container
                   que les maps, calculée sur l'état en mémoire de la version */}
@@ -8415,8 +8367,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               toast({ title: "ATDC", description: "Sélectionne une map Duration et une map Start of injection correspondante.", variant: "destructive" });
               return;
             }
-            setAtdcToolOpen(false);
-            setAtdcToolMap({
+            const virtualMap: MapData = {
               ...source,
               name: "ATDC " + (source.name || "TI") + " - SOI " + atdcToolSoi + "°",
               address: 0xD0000000 + (source.address & 0x00FFFFFF),
@@ -8428,7 +8379,26 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               category: "Injection system",
               subcategory: "ATDC",
               description: `ATDC = TI(cellule) - SOI(cellule) | TI: ${source.name} | SOI: ${soiSource.name}`,
+            };
+
+            setAtdcToolOpen(false);
+
+            setOpenMaps((prev) => {
+              const withoutExisting = prev.filter((m) => m.address !== virtualMap.address);
+              return [...withoutExisting, virtualMap];
             });
+            setMapLayouts((prev) => ensureLayoutForMap(virtualMap, prev));
+            setMapViewModes((prev) => {
+              const next = new Map(prev);
+              next.set(virtualMap.address, "text");
+              return next;
+            });
+            setMapEasyViewStatus((prev) => {
+              const next = new Map(prev);
+              next.set(virtualMap.address, false);
+              return next;
+            });
+            setActiveMapAddress(virtualMap.address);
           }}
           onClose={() => setAtdcToolOpen(false)}
         />

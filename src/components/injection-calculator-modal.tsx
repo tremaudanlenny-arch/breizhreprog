@@ -12,6 +12,10 @@ export interface InjectionMapSnapshot {
   mapValues: number[][];
   xAxisLabels: string[];
   yAxisLabels: string[];
+  sourceMapValues?: number[][];
+  sourceXAxisLabels?: string[];
+  sourceYAxisLabels?: string[];
+  isAtdcVirtual?: boolean;
   xAxisLabel: string;
   yAxisLabel: string;
   mapName: string;
@@ -139,67 +143,161 @@ export function InjectionCalculatorModal({
   const calculation = useMemo(() => {
     if (!durationSnapshot || !soiSnapshot || !Number.isFinite(targetIq) || !Number.isFinite(targetAtdc)) return null;
 
-    const source = direction === "duration-to-soi" ? durationSnapshot : soiSnapshot;
-    const target = direction === "duration-to-soi" ? soiSnapshot : durationSnapshot;
+    const durationValues = durationSnapshot.sourceMapValues ?? durationSnapshot.mapValues;
+    const soiValues = soiSnapshot.sourceMapValues ?? soiSnapshot.mapValues;
+    const durationXAxis = parseAxis(durationSnapshot.sourceXAxisLabels ?? durationSnapshot.xAxisLabels);
+    const durationYAxis = parseAxis(durationSnapshot.sourceYAxisLabels ?? durationSnapshot.yAxisLabels);
+    const soiXAxis = parseAxis(soiSnapshot.sourceXAxisLabels ?? soiSnapshot.xAxisLabels);
+    const soiYAxis = parseAxis(soiSnapshot.sourceYAxisLabels ?? soiSnapshot.yAxisLabels);
 
-    const sourceAxis = axisMode === "x" ? parseAxis(source.xAxisLabels) : parseAxis(source.yAxisLabels);
-    const targetAxis = axisMode === "x" ? parseAxis(target.xAxisLabels) : parseAxis(target.yAxisLabels);
-    const sourceInfo = nearestOrBracket(sourceAxis, targetIq);
-    const targetInfo = nearestOrBracket(targetAxis, targetIq);
+    const durationIqAxis = axisMode === "x" ? durationXAxis : durationYAxis;
+    const soiIqAxis = axisMode === "x" ? soiXAxis : soiYAxis;
+    const durationOtherAxis = axisMode === "x" ? durationYAxis : durationXAxis;
+    const soiOtherAxis = axisMode === "x" ? soiYAxis : soiXAxis;
 
-    const sourceOtherCount = axisMode === "x"
-      ? source.mapValues.length
-      : source.mapValues[0]?.length ?? 0;
-    const targetOtherCount = axisMode === "x"
-      ? target.mapValues.length
-      : target.mapValues[0]?.length ?? 0;
+    const durationInfo = nearestOrBracket(durationIqAxis, targetIq);
+    const soiInfo = nearestOrBracket(soiIqAxis, targetIq);
+    const finiteDurationAxis = durationIqAxis.filter(Number.isFinite);
+    const finiteSoiAxis = soiIqAxis.filter(Number.isFinite);
+    const durationInRange = finiteDurationAxis.length > 0
+      && targetIq >= Math.min(...finiteDurationAxis)
+      && targetIq <= Math.max(...finiteDurationAxis);
+    const soiInRange = finiteSoiAxis.length > 0
+      && targetIq >= Math.min(...finiteSoiAxis)
+      && targetIq <= Math.max(...finiteSoiAxis);
+    const targetInRange = durationInRange && soiInRange;
 
-    const sourceValues: number[] = [];
-    for (let i = 0; i < sourceOtherCount; i++) {
-      const sourceIndex = i;
+    const seriesAtTarget = (
+      values: number[][],
+      info: { lower: number; upper: number; t: number },
+    ): number[] => {
       if (axisMode === "x") {
-        const row = source.mapValues[sourceIndex] || [];
-        sourceValues.push(interpolateRow(row, sourceInfo));
-      } else {
-        sourceValues.push(interpolateColumn(source.mapValues, sourceIndex, sourceInfo));
+        return values.map((row) => {
+          const a = row[info.lower];
+          const b = row[info.upper];
+          if (Number.isFinite(a) && Number.isFinite(b)) return a + (b - a) * info.t;
+          return Number.isFinite(a) ? a : b;
+        });
+      }
+      const cols = values[0]?.length ?? 0;
+      const result: number[] = [];
+      for (let col = 0; col < cols; col++) {
+        const a = values[info.lower]?.[col];
+        const b = values[info.upper]?.[col];
+        if (Number.isFinite(a) && Number.isFinite(b)) result.push(a + (b - a) * info.t);
+        else result.push(Number.isFinite(a) ? a : b);
+      }
+      return result;
+    };
+
+    const resampleSeries = (
+      sourceAxis: number[],
+      sourceValues: number[],
+      targetAxis: number[],
+    ): number[] => {
+      return targetAxis.map((target) => {
+        const info = nearestOrBracket(sourceAxis, target);
+        if (!sourceValues.length) return NaN;
+        const a = sourceValues[info.lower];
+        const b = sourceValues[info.upper];
+        if (Number.isFinite(a) && Number.isFinite(b)) return a + (b - a) * info.t;
+        return Number.isFinite(a) ? a : b;
+      });
+    };
+
+    const durationAtIq = seriesAtTarget(durationValues, durationInfo);
+    const soiAtIq = seriesAtTarget(soiValues, soiInfo);
+
+    let durationSeries: number[];
+    let soiSeries: number[];
+
+    if (direction === "duration-to-soi") {
+      durationSeries = durationAtIq.map((v) => Number(v.toFixed(2)));
+      const soiFromDuration = resampleSeries(
+        durationOtherAxis,
+        durationSeries,
+        soiOtherAxis,
+      );
+      soiSeries = soiFromDuration.map((v) => Number((v - targetAtdc).toFixed(2)));
+    } else {
+      soiSeries = soiAtIq.map((v) => Number(v.toFixed(2)));
+      const durationFromSoi = resampleSeries(
+        soiOtherAxis,
+        soiSeries,
+        durationOtherAxis,
+      );
+      durationSeries = durationFromSoi.map((v) => Number((v + targetAtdc).toFixed(2)));
+    }
+
+    const durationAxisLabelsRaw = durationSnapshot.sourceXAxisLabels ?? durationSnapshot.xAxisLabels;
+    const durationYAxisLabelsRaw = durationSnapshot.sourceYAxisLabels ?? durationSnapshot.yAxisLabels;
+    const soiAxisLabelsRaw = soiSnapshot.sourceXAxisLabels ?? soiSnapshot.xAxisLabels;
+    const soiYAxisLabelsRaw = soiSnapshot.sourceYAxisLabels ?? soiSnapshot.yAxisLabels;
+
+    const nextDurationXAxis = adjustAxis && axisMode === "x"
+      ? replaceAxisValue(durationAxisLabelsRaw, targetIq)
+      : durationAxisLabelsRaw;
+    const nextDurationYAxis = adjustAxis && axisMode === "y"
+      ? replaceAxisValue(durationYAxisLabelsRaw, targetIq)
+      : durationYAxisLabelsRaw;
+    const nextSoiXAxis = adjustAxis && axisMode === "x"
+      ? replaceAxisValue(soiAxisLabelsRaw, targetIq)
+      : soiAxisLabelsRaw;
+    const nextSoiYAxis = adjustAxis && axisMode === "y"
+      ? replaceAxisValue(soiYAxisLabelsRaw, targetIq)
+      : soiYAxisLabelsRaw;
+
+    const durationChanges: Record<string, number> = {};
+    const soiChanges: Record<string, number> = {};
+
+    if (axisMode === "x") {
+      const durationIndex = durationInfo.index;
+      const soiIndex = soiInfo.index;
+      for (let row = 0; row < durationSeries.length; row++) {
+        if (Number.isFinite(durationSeries[row])) {
+          durationChanges[String(row) + "-" + String(durationIndex)] = durationSeries[row];
+        }
+      }
+      for (let row = 0; row < soiSeries.length; row++) {
+        if (Number.isFinite(soiSeries[row])) {
+          soiChanges[String(row) + "-" + String(soiIndex)] = soiSeries[row];
+        }
+      }
+    } else {
+      const durationIndex = durationInfo.index;
+      const soiIndex = soiInfo.index;
+      const durationCols = durationValues[0]?.length ?? 0;
+      const soiCols = soiValues[0]?.length ?? 0;
+      for (let col = 0; col < durationCols; col++) {
+        if (Number.isFinite(durationSeries[col])) {
+          durationChanges[String(durationIndex) + "-" + String(col)] = durationSeries[col];
+        }
+      }
+      for (let col = 0; col < soiCols; col++) {
+        if (Number.isFinite(soiSeries[col])) {
+          soiChanges[String(soiIndex) + "-" + String(col)] = soiSeries[col];
+        }
       }
     }
 
-    const targetValues = sourceValues.map((value, i) => {
-      const transformed = direction === "duration-to-soi"
-        ? value - targetAtdc
-        : value + targetAtdc;
-      return Number(transformed.toFixed(2));
-    });
-
-    const mappedTargetValues = targetValues.slice(0, targetOtherCount).map((_, targetIndex) => {
-      const sourceIndex = resampleIndex(targetIndex, targetOtherCount, sourceValues.length);
-      return Number(targetValues[sourceIndex].toFixed(2));
-    });
-
-    const nextAxis = adjustAxis
-      ? (axisMode === "x"
-        ? replaceAxisValue(target.xAxisLabels, targetIq)
-        : replaceAxisValue(target.yAxisLabels, targetIq))
-      : (axisMode === "x" ? target.xAxisLabels : target.yAxisLabels);
-
-    const sourceAxisChanged = adjustAxis
-      ? (axisMode === "x"
-        ? replaceAxisValue(source.xAxisLabels, targetIq)
-        : replaceAxisValue(source.yAxisLabels, targetIq))
-      : (axisMode === "x" ? source.xAxisLabels : source.yAxisLabels);
-
     return {
-      source,
-      target,
-      sourceInfo,
-      targetInfo,
-      mappedTargetValues,
-      targetColumnOrRow: targetInfo.index,
-      targetAxisLabels: nextAxis,
-      sourceAxisLabels: sourceAxisChanged,
-      sourceAxis,
-      targetAxis,
+      durationInfo,
+      soiInfo,
+      durationSeries,
+      soiSeries,
+      durationChanges,
+      soiChanges,
+      durationOtherAxis,
+      soiOtherAxis,
+      durationAxisLabels: axisMode === "x" ? nextDurationXAxis : nextDurationYAxis,
+      soiAxisLabels: axisMode === "x" ? nextSoiXAxis : nextSoiYAxis,
+      durationInRange,
+      soiInRange,
+      targetInRange,
+      durationMapName: durationSnapshot.mapName,
+      soiMapName: soiSnapshot.mapName,
+      durationIqAxis,
+      soiIqAxis,
     };
   }, [
     adjustAxis,
@@ -211,7 +309,10 @@ export function InjectionCalculatorModal({
     targetIq,
   ]);
 
-  const targetMapReady = !!calculation && calculation.mappedTargetValues.length > 0;
+  const targetMapReady = !!calculation
+    && calculation.targetInRange
+    && calculation.durationSeries.length > 0
+    && calculation.soiSeries.length > 0;
 
   const apply = () => {
     if (!calculation || !targetMapReady) return;
@@ -219,43 +320,21 @@ export function InjectionCalculatorModal({
     const changes = new Map<number, Record<string, number>>();
     const axisChanges = new Map<number, { x?: string[]; y?: string[] }>();
 
-    const target = calculation.target;
-    const targetAxisIndex = calculation.targetColumnOrRow;
-    const cellChanges: Record<string, number> = {};
-
-    if (axisMode === "x") {
-      for (let row = 0; row < target.mapValues.length; row++) {
-        const value = calculation.mappedTargetValues[row] ?? calculation.mappedTargetValues[calculation.mappedTargetValues.length - 1];
-        if (!Number.isFinite(value)) continue;
-        cellChanges[`${row}-${targetAxisIndex}`] = value;
-      }
-    } else {
-      const cols = target.mapValues[0]?.length ?? 0;
-      for (let col = 0; col < cols; col++) {
-        const value = calculation.mappedTargetValues[col] ?? calculation.mappedTargetValues[calculation.mappedTargetValues.length - 1];
-        if (!Number.isFinite(value)) continue;
-        cellChanges[`${targetAxisIndex}-${col}`] = value;
-      }
-    }
-
-    changes.set(targetAddress(), cellChanges);
+    changes.set(durationAddress, calculation.durationChanges);
+    changes.set(soiAddress, calculation.soiChanges);
 
     if (adjustAxis) {
-      const sourceAddress = direction === "duration-to-soi" ? durationAddress : soiAddress;
-      const targetAddressValue = direction === "duration-to-soi" ? soiAddress : durationAddress;
       if (axisMode === "x") {
-        axisChanges.set(sourceAddress, { x: calculation.sourceAxisLabels });
-        axisChanges.set(targetAddressValue, { x: calculation.targetAxisLabels });
+        axisChanges.set(durationAddress, { x: calculation.durationAxisLabels });
+        axisChanges.set(soiAddress, { x: calculation.soiAxisLabels });
       } else {
-        axisChanges.set(sourceAddress, { y: calculation.sourceAxisLabels });
-        axisChanges.set(targetAddressValue, { y: calculation.targetAxisLabels });
+        axisChanges.set(durationAddress, { y: calculation.durationAxisLabels });
+        axisChanges.set(soiAddress, { y: calculation.soiAxisLabels });
       }
     }
 
     onApply({ changes, axisChanges });
   };
-
-  const targetAddress = () => (direction === "duration-to-soi" ? soiAddress : durationAddress);
 
   const selectedSourceName = direction === "duration-to-soi"
     ? durationSnapshot?.mapName || durationMaps.find((m) => m.address === durationAddress)?.name || "Duration"

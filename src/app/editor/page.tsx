@@ -5411,7 +5411,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
       const headerName = response.headers.get("X-Mappack-Filename");
       const fileName = headerName
         ? decodeURIComponent(headerName)
-        : `Mappack ${projectData.project_name} ZedSuite.json`;
+        : `Mappack ${projectData.project_name} Breizh Reprog.json`;
       const bytes = new Uint8Array(await blob.arrayBuffer());
       await saveBytesToFile(bytes, fileName);
 
@@ -7052,7 +7052,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
             fenêtre sur macOS. */}
         {sidebarCollapsed && (
           <div className={`flex flex-col items-center gap-2 pt-3 flex-shrink-0 ${isMacOS() ? 'mt-10' : ''}`}>
-            <img src="/zedsuite-icon.svg" alt="ZedSuite" className="w-8 h-8 object-contain" />
+            <div className="w-8 h-8 rounded-md flex items-center justify-center bg-gradient-to-br from-violet-600/20 to-purple-500/10 border border-violet-400/20"><span className="text-sm font-black text-violet-300">BR</span></div>
             <button
               type="button"
               onClick={() => setSidebarCollapsed(false)}

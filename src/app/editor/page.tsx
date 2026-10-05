@@ -39,6 +39,7 @@ import {
   SlidersHorizontal,
   Undo2,
   Redo2,
+  Star,
 } from "lucide-react";
 import { PiHeadCircuit } from "react-icons/pi";
 import { HexdumpViewer, type MapRegion } from "@/components/hexdump-viewer";
@@ -2074,6 +2075,44 @@ function EditorPageContent() {
   // est retrouvé en y revenant. Transmis à l'export mappack pour que le
   // fichier reprenne le même ordre.
   const [mapSortMode, setMapSortMode] = useState<"address" | "name" | "name-desc">("address");
+  // Favoris des maps : persistés par projet, avec source + adresse pour
+  // éviter les collisions entre mappack détecté et définitions importées.
+  const [favoriteMapKeys, setFavoriteMapKeys] = useState<Set<string>>(new Set());
+  const mapFavoriteKey = useCallback((map: MapData) => {
+    const source = map.external_source || "detector";
+    return source + ":" + String(map.address || 0);
+  }, []);
+  const isMapFavorite = useCallback((map: MapData) => favoriteMapKeys.has(mapFavoriteKey(map)), [favoriteMapKeys, mapFavoriteKey]);
+
+  useEffect(() => {
+    if (!projectName) {
+      setFavoriteMapKeys(new Set());
+      return;
+    }
+    try {
+      const raw = localStorage.getItem("mapFavorites:" + projectName);
+      const parsed = raw ? JSON.parse(raw) : [];
+      setFavoriteMapKeys(Array.isArray(parsed) ? new Set(parsed.filter((v) => typeof v === "string")) : new Set());
+    } catch {
+      setFavoriteMapKeys(new Set());
+    }
+  }, [projectName]);
+
+  const toggleMapFavorite = useCallback((map: MapData) => {
+    if (!projectName) return;
+    const key = mapFavoriteKey(map);
+    setFavoriteMapKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      try {
+        localStorage.setItem("mapFavorites:" + projectName, JSON.stringify(Array.from(next)));
+      } catch {
+        // localStorage peut être indisponible : l'état de session reste utilisable.
+      }
+      return next;
+    });
+  }, [projectName, mapFavoriteKey]);
   useEffect(() => {
     if (!projectName) return;
     const stored = localStorage.getItem(`mapSortMode:${projectName}`);
@@ -6916,6 +6955,8 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   // according to the user's toggle. Address is always the tiebreaker.
   const sortedGroupedMaps = Object.entries(groupedMaps).reduce((acc, [folder, maps]) => {
     acc[folder] = [...maps].sort((a, b) => {
+      const favoriteDelta = Number(isMapFavorite(b)) - Number(isMapFavorite(a));
+      if (favoriteDelta !== 0) return favoriteDelta;
       if (mapSortMode === "name" || mapSortMode === "name-desc") {
         const byName = (a.name || "").localeCompare(b.name || "");
         if (byName !== 0) return mapSortMode === "name-desc" ? -byName : byName;
@@ -6951,6 +6992,8 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     }
     const sortMaps = (maps: MapData[]) =>
       [...maps].sort((a, b) => {
+        const favoriteDelta = Number(isMapFavorite(b)) - Number(isMapFavorite(a));
+        if (favoriteDelta !== 0) return favoriteDelta;
         if (mapSortMode === "name" || mapSortMode === "name-desc") {
           const byName = (a.name || "").localeCompare(b.name || "");
           if (byName !== 0) return mapSortMode === "name-desc" ? -byName : byName;
@@ -7208,6 +7251,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                               const twin = detectorTwinOf(map);
                               // Use codeblock_id directly from backend
                               const edcsuiteCodeblockId = map.codeblock_id || null;
+                              const isFavorite = isMapFavorite(map);
 
                               // Texte : dégradé du logo si modifié (bg-clip-text), sinon normal.
                               // L'icône (SVG currentColor) ne peut pas prendre le dégradé -> rouge uni.
@@ -7259,6 +7303,35 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                                   style={{ color: textColor }}
                                 >
                                   <FileText className="w-3 h-3 flex-shrink-0" />
+                                  <span
+                                    role="button"
+                                    tabIndex={0}
+                                    className="w-5 h-5 flex items-center justify-center rounded-md flex-shrink-0 hover:bg-white/10"
+                                    style={{ color: isFavorite ? "#facc15" : (theme === 'light' ? "rgba(0,0,0,0.35)" : "rgba(255,255,255,0.28)") }}
+                                    title={isFavorite ? "Retirer des favoris" : "Ajouter aux favoris"}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                    }}
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      toggleMapFavorite(map);
+                                    }}
+                                    onDoubleClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        toggleMapFavorite(map);
+                                      }
+                                    }}
+                                  >
+                                    <Star className="w-3.5 h-3.5" fill={isFavorite ? "currentColor" : "none"} />
+                                  </span>
                                   <span className="text-xs truncate flex-1">
                                     {map.address ? (
                                       <>

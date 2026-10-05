@@ -1,6 +1,6 @@
 [package]
 name = "breizh-reprog"
-version = "1.19.3"
+version = "1.19.4"
 edition = "2021"
 description = "Breizh Reprog X Ninnin - ECU map editor (Bosch EDC15/EDC16)"
 authors = ["Breizh Reprog X Ninnin contributors"]

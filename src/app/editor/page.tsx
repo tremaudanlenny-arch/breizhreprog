@@ -4216,9 +4216,18 @@ function EditorPageContent() {
         fetch(`/api/mappack/status?fileId=${data.fileId}`)
           .then(res => res.json())
           .then(statusData => {
-            setMappackUnlocked(statusData.unlocked === true);
-            setMappackIsPro(statusData.isPro === true);
-            setMappackExportEnabled(statusData.exportEnabled !== false);
+            // Le statut distant complète celui déjà chargé avec le projet.
+            // Ne jamais écraser un état valide par "locked" si l'endpoint
+            // répond sans champ booléen exploitable.
+            if (typeof statusData.unlocked === "boolean") {
+              setMappackUnlocked(statusData.unlocked);
+            }
+            if (typeof statusData.isPro === "boolean") {
+              setMappackIsPro(statusData.isPro);
+            }
+            if (typeof statusData.exportEnabled === "boolean") {
+              setMappackExportEnabled(statusData.exportEnabled);
+            }
             if (typeof statusData.mappackPrice === "number") {
               setMappackPrice(statusData.mappackPrice);
             }
@@ -4228,7 +4237,9 @@ function EditorPageContent() {
             }
           })
           .catch(() => {
-            setMappackUnlocked(false);
+            // En mode desktop/Tauri, l'API web peut être indisponible.
+            // On conserve alors le statut déjà fourni avec le projet au
+            // lieu de verrouiller artificiellement l'ouverture des maps.
           });
       }
 

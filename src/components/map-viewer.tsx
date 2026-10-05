@@ -13,10 +13,13 @@ import { resolveMapCellLayout, resolveAxisLabels, resolveAxisSources } from "@/l
 import { getMapValueRange, clampMapValue } from "@/lib/map-value-range";
 import { gridToText, parseGridText } from "@/lib/clipboard-grid";
 import { readSystemClipboardText, writeSystemClipboardText } from "@/lib/system-clipboard";
-import { Map3DMappingEditor } from "@/components/map-3d-mapping-editor";
-
-// Import Plotly dynamiquement pour ├®viter les probl├¿mes SSR
+// Map 3D uses react-three-fiber and must never be evaluated during Next.js SSR.
 import dynamic from "next/dynamic";
+
+const Map3DMappingEditor = dynamic(
+  () => import("@/components/map-3d-mapping-editor").then((mod) => mod.Map3DMappingEditor),
+  { ssr: false, loading: () => null },
+);
 
 const Plot = dynamic(() => import("react-plotly.js"), { 
   ssr: false,

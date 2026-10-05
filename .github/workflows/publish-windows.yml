@@ -1,13 +1,7 @@
-name: Publish Breizh Reprog Windows
+name: Publish Breizh Reprog Windows (manual fallback)
 
 on:
-  workflow_run:
-    workflows:
-      - "Build Windows EXE"
-    types:
-      - completed
-    branches:
-      - master
+  workflow_dispatch:
 
 permissions:
   actions: read
@@ -15,23 +9,19 @@ permissions:
 
 jobs:
   publish:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: windows-latest
 
     steps:
-      - name: Checkout built commit
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 1
 
-      - name: Download existing installer
+      - name: Download latest Windows artifact
         uses: actions/download-artifact@v4
         with:
           name: breizh-reprog-windows-installer
           path: release-assets
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ github.event.workflow_run.id }}
 
       - name: Read version
         shell: pwsh
@@ -41,11 +31,16 @@ jobs:
           $exe = Get-ChildItem -Path release-assets -Filter *.exe -Recurse | Select-Object -First 1
           if (-not $exe) { throw "Installer .exe introuvable dans l'artifact." }
           "EXE_PATH=$($exe.FullName)" >> $env:GITHUB_ENV
-          Write-Host "Version $version"
-          Write-Host "Installer $($exe.FullName)"
 
       - name: Publish GitHub release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "v$env:VERSION" "$env:EXE_PATH" --repo "${{ github.repository }}" --title "Breizh Reprog X Ninnin Projet Perf v$env:VERSION" --notes "Breizh Reprog X Ninnin Projet Perf Windows installer. Cette release est utilisée par la mise à jour automatique."
+        run: |
+          $tag = "v$env:VERSION"
+          gh release view $tag --repo "${{ github.repository }}" *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag "$env:EXE_PATH" --repo "${{ github.repository }}" --title "Breizh Reprog X Ninnin Projet Perf v$env:VERSION" --notes "Breizh Reprog X Ninnin Projet Perf Windows installer."
+          } else {
+            gh release upload $tag "$env:EXE_PATH" --repo "${{ github.repository }}" --clobber
+          }

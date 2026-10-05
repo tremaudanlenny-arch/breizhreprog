@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { CalibrationMathTools } from "@/components/calibration-math-tools";
 import {
   Activity,
   AlertTriangle,
   CheckCircle2,
+  Calculator,
   Download,
   Gauge,
   RefreshCw,
@@ -83,7 +85,7 @@ export function CalibrationToolsModal({
   const card = light ? "rgba(248,250,252,.96)" : "rgba(255,255,255,.035)";
   const text = light ? "#111827" : "#fff";
   const muted = light ? "rgba(17,24,39,.56)" : "rgba(255,255,255,.55)";
-  const [tab, setTab] = useState<"analyse" | "map" | "doctor" | "snapshots">("analyse");
+  const [tab, setTab] = useState<"analyse" | "map" | "doctor" | "snapshots" | "calculs">("analyse");
   const [sensor, setSensor] = useState<"3" | "4" | "6">("4");
   const [filter, setFilter] = useState("");
   const [snapshotName, setSnapshotName] = useState("Test calibration");
@@ -264,6 +266,7 @@ export function CalibrationToolsModal({
     ["map", "MAP sensor", Gauge],
     ["doctor", "Map Doctor", Activity],
     ["snapshots", "Snapshots", Save],
+    ["calculs", "Outils de calcul", Calculator],
   ] as const;
 
   return (
@@ -533,6 +536,12 @@ export function CalibrationToolsModal({
                   </div>
                 </div>
               </>
+            )}
+
+            {tab === "calculs" && (
+              <div className="-m-5">
+                <CalibrationMathTools theme={theme} onClose={() => setTab("analyse")} />
+              </div>
             )}
 
             <div className="rounded-xl border p-3 text-[10px]" style={{ borderColor: border, color: muted }}>

@@ -33,6 +33,7 @@ import {
   PanelLeftOpen,
   Search,
   FileUp,
+  Calculator,
 } from "lucide-react";
 import { PiHeadCircuit } from "react-icons/pi";
 import { HexdumpViewer, type MapRegion } from "@/components/hexdump-viewer";
@@ -81,6 +82,7 @@ import {
   saveMapDisplayPref,
 } from "@/lib/map-display-prefs";
 import { ConfirmModal } from "@/components/confirm-modal";
+import { AtdcToolModal } from "@/components/atdc-tool-modal";
 import { PromptModal } from "@/components/prompt-modal";
 import { correctChecksumByEcuType, isChecksumSupported, ChecksumResult } from "@/lib/ecu/bosch/checksums";
 import { disableDTC, enableDTC, detectDTCs, type DetectedDTC, type CodeblockInfo } from "@/lib/ecu/bosch/dtc";
@@ -1793,46 +1795,17 @@ function stripSoiTag<T extends { maps?: any[] } | null | undefined>(detectionRes
   const baseMaps = detectionResults.maps
     .filter((m: any) => m?.map_type !== "atdc_virtual")
     .map((m: any) =>
-    typeof m?.name === "string" && m.name.includes(" (SOI)") && !m.external_source
-      ? { ...m, name: m.name.replace(" (SOI)", "") }
-      : m
-  );
+      typeof m?.name === "string" && m.name.includes(" (SOI)") && !m.external_source
+        ? { ...m, name: m.name.replace(" (SOI)", "") }
+        : m
+    );
 
-  // Real editor maps: ATDC is derived from each TI1..TI5 duration map.
-  // Formula used by the Breizh Reprog editor: ATDC = TI - SOI.
-  const virtualAtdc: any[] = [];
-  let virtualIndex = 0;
-
-  for (const m of baseMaps) {
-    if (!m || m.external_source || !m.name || m.map_type === "atdc_virtual") continue;
-    const name = String(m.name);
-    if (/selector/i.test(name)) continue;
-
-    const match = name.match(/(?:injector\s+)?duration\s*0?([1-5])(?:\s|$)/i);
-    if (!match) continue;
-
-    const ti = Number(match[1]);
-    virtualIndex += 1;
-
-    virtualAtdc.push({
-      ...m,
-      id: `atdc-${m.address}-${ti}-${m.codeblock_id ?? "x"}`,
-      name: `ATDC TI${ti}`,
-      address: 0xE0000000 + virtualIndex,
-      map_type: "atdc_virtual",
-      virtual_readonly: true,
-      atdc_source_duration_address: m.address,
-      atdc_soi_default: 90,
-      category: "Injection system",
-      subcategory: "ATDC",
-      description: `Derived map: ATDC = TI - SOI | source: ${name}`,
-    });
-  }
-
+  // ATDC is opened from Outils as a virtual, read-only view. It must never
+  // pollute the detected-map list or the mappack.
   return {
     ...detectionResults,
-    maps: [...baseMaps, ...virtualAtdc],
-    total_maps: baseMaps.length + virtualAtdc.length,
+    maps: baseMaps,
+    total_maps: baseMaps.length,
   };
 }
 
@@ -2131,6 +2104,11 @@ function EditorPageContent() {
   const [openMaps, setOpenMaps] = useState<MapData[]>([]);
   const [mapViewModes, setMapViewModes] = useState<Map<number, "text" | "2d" | "3d">>(new Map());
   const [mapEasyViewStatus, setMapEasyViewStatus] = useState<Map<number, boolean>>(new Map());
+  // ATDC tool: the derived map is ephemeral and never added to the sidebar.
+  const [atdcToolOpen, setAtdcToolOpen] = useState(false);
+  const [atdcToolMap, setAtdcToolMap] = useState<MapData | null>(null);
+  const [atdcToolSoi, setAtdcToolSoi] = useState(90);
+
 
   // Store global pour les modifications de toutes les maps (persist même après fermeture des fenêtres)
   // Clé: mapAddress, Valeur: Record<cellKey, newValue>
@@ -6240,10 +6218,23 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, [toolsMenuOpen]);
-  // Menu du bouton Outils : vide pour l'instant (décision du 28/09), le
-  // premier outil arrive à la version suivante
+  const openAtdcTool = () => {
+    setToolsMenuOpen(false);
+    setAtdcToolOpen(true);
+  };
+
+  const atdcSourceMaps = useMemo(() => {
+    const maps = projectData?.detectionResults?.maps ?? [];
+    return maps.filter((m) =>
+      !m.external_source &&
+      /(?:injector\\s+)?duration\\s+0?[1-5](?:\\D|$)/i.test(m.name || "") &&
+      !/selector/i.test(m.name || "")
+    );
+  }, [projectData?.detectionResults?.maps]);
+
   const renderToolsMenu = (placement: 'below' | 'side') => (
     <div
+      ref={toolsMenuRef}
       className={`absolute z-50 min-w-[220px] p-1.5 border rounded-lg shadow-lg ${placement === 'below' ? 'top-full right-0 mt-1' : 'top-0 left-full ml-2'}`}
       style={{
         backgroundColor: theme === 'light' ? 'rgba(255,255,255,0.92)' : theme === 'oled' ? 'rgba(16,16,19,0.96)' : 'rgba(24,27,37,0.92)',
@@ -6253,9 +6244,17 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         color: getTextColor(),
       }}
     >
-      <div className="px-3 py-1.5 text-sm opacity-60 select-none">{t.sidebar.toolsEmpty}</div>
+      <button
+        type="button"
+        onClick={openAtdcTool}
+        className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left transition-colors ${theme === 'light' ? 'hover:bg-black/5' : 'hover:bg-white/10'}`}
+      >
+        <Calculator className="w-4 h-4 text-violet-400" />
+        <span className="text-sm">Calculateur ATDC</span>
+      </button>
     </div>
   );
+
 
   const handleMapClick = (clicked: MapData) => {
     // Block map clicks when mappack is locked
@@ -8257,7 +8256,55 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                 </div>
               )}
 
-              {/* Fenêtre de puissance — flottante, dans le même container
+              {atdcToolMap && projectData && (
+                <div
+                  data-map-address={atdcToolMap.address}
+                  style={{
+                    position: "absolute",
+                    top: 40,
+                    left: 60,
+                    width: "min(1100px, calc(100% - 100px))",
+                    height: "min(680px, calc(100% - 80px))",
+                    minWidth: 420,
+                    minHeight: 300,
+                    zIndex: 80,
+                    background: getWindowBg(),
+                    border: `1px solid ${getBorderColor()}`,
+                    borderRadius: 8,
+                    overflow: "hidden",
+                    boxShadow: "0 18px 50px rgba(0,0,0,0.35)",
+                  }}
+                  onMouseDown={() => setAtdcToolMap((m) => (m ? { ...m } : m))}
+                >
+                  <MapViewer
+                    key={`atdc-${atdcToolMap.address}-${atdcToolSoi}`}
+                    mapData={{ ...atdcToolMap, atdc_soi_default: atdcToolSoi }}
+                    fileData={projectData.file_data}
+                    projectName={projectData.project_name}
+                    fileName={projectData.file_name}
+                    viewMode="text"
+                    onClose={() => setAtdcToolMap(null)}
+                    theme={theme}
+                    disableTableColors={settings.disableTableColors}
+                    disableGraphColors={settings.disableGraphColors}
+                    allMaps={projectData.detectionResults.maps}
+                    ecuType={projectData.ecu_type}
+                    onAutoSize={(w, h) => {
+                      const workspace = workspaceRef.current?.getBoundingClientRect();
+                      if (!workspace) return;
+                      const width = Math.min(Math.max(420, w), workspace.width - 20);
+                      const height = Math.min(Math.max(260, h), workspace.height - 20);
+                      const el = document.querySelector<HTMLElement>(`[data-map-address="${atdcToolMap.address}"]`);
+                      if (el) {
+                        el.style.width = `${width}px`;
+                        el.style.height = `${height}px`;
+                      }
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Fenêtre de puissance — flottante, dans le même container              {/* Fenêtre de puissance — flottante, dans le même container
                   que les maps, calculée sur l'état en mémoire de la version */}
               {powerFile && projectData && (
                 <FloatingWindow
@@ -8332,6 +8379,38 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
           </div>
         </div>
       </div>
+
+      {atdcToolOpen && (
+        <AtdcToolModal
+          theme={theme}
+          maps={atdcSourceMaps}
+          selectedMap={atdcSourceMaps.find((m) => m.address === atdcToolMap?.atdc_source_duration_address) ?? null}
+          soi={atdcToolSoi}
+          onSelectMap={(map) => setAtdcToolMap((current) => current?.atdc_source_duration_address === map.address ? current : current)}
+          onSelectSoi={setAtdcToolSoi}
+          onOpen={() => {
+            const source = atdcSourceMaps.find((m) => m.address === atdcToolMap?.atdc_source_duration_address);
+            if (!source) {
+              toast({ title: "ATDC", description: "Sélectionne une map TI1 à TI5.", variant: "destructive" });
+              return;
+            }
+            setAtdcToolOpen(false);
+            setAtdcToolMap({
+              ...source,
+              name: "ATDC " + (source.name || "TI"),
+              address: 0xD0000000 + (source.address & 0x00FFFFFF),
+              map_type: "atdc_virtual",
+              virtual_readonly: true,
+              atdc_source_duration_address: source.address,
+              atdc_soi_default: atdcToolSoi,
+              category: "Injection system",
+              subcategory: "ATDC",
+              description: `ATDC = TI - SOI | source: ${source.name}`,
+            });
+          }}
+          onClose={() => setAtdcToolOpen(false)}
+        />
+      )}
 
       {/* Project Info Modal */}
       {showProjectInfoModal && projectData && (

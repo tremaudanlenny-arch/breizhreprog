@@ -155,6 +155,7 @@ interface MapData {
   x_axis_values?: number[] | null;
   y_axis_values?: number[] | null;
   atdc_source_duration_address?: number;
+  atdc_source_soi_map?: MapData;
   atdc_soi_default?: number;
   virtual_readonly?: boolean;
 }
@@ -6228,7 +6229,16 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     const maps = projectData?.detectionResults?.maps ?? [];
     return maps.filter((m) =>
       !m.external_source &&
-      /(?:injector\s+)?duration\s+0?[1-5](?:\D|$)/i.test(m.name || "") &&
+      /(?:injector\s+)?duration\s+0?[0-5](?:\D|$)/i.test(m.name || "") &&
+      !/selector/i.test(m.name || "")
+    );
+  }, [projectData?.detectionResults?.maps]);
+
+  const atdcSoiMaps = useMemo(() => {
+    const maps = projectData?.detectionResults?.maps ?? [];
+    return maps.filter((m) =>
+      !m.external_source &&
+      /start\s+of\s+injection\s+(?:90|80|70|60|50)(?:°|\s|$)/i.test(m.name || "") &&
       !/selector/i.test(m.name || "")
     );
   }, [projectData?.detectionResults?.maps]);
@@ -8390,29 +8400,32 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
       {atdcToolOpen && (
         <AtdcToolModal
           theme={theme}
-          maps={atdcSourceMaps}
+          durationMaps={atdcSourceMaps}
+          soiMaps={atdcSoiMaps}
           selectedMap={atdcSelectedSource}
           soi={atdcToolSoi}
           onSelectMap={setAtdcSelectedSource}
           onSelectSoi={setAtdcToolSoi}
           onOpen={() => {
             const source = atdcSelectedSource;
-            if (!source) {
-              toast({ title: "ATDC", description: "Sélectionne une map TI1 à TI5.", variant: "destructive" });
+            const soiSource = atdcSoiMaps.find((m) => new RegExp("start\\s+of\\s+injection\\s+" + atdcToolSoi + "(?:°|\\s|$)", "i").test(m.name || ""));
+            if (!source || !soiSource) {
+              toast({ title: "ATDC", description: "Sélectionne une map Duration et une map Start of injection correspondante.", variant: "destructive" });
               return;
             }
             setAtdcToolOpen(false);
             setAtdcToolMap({
               ...source,
-              name: "ATDC " + (source.name || "TI"),
+              name: "ATDC " + (source.name || "TI") + " - SOI " + atdcToolSoi + "°",
               address: 0xD0000000 + (source.address & 0x00FFFFFF),
               map_type: "atdc_virtual",
               virtual_readonly: true,
               atdc_source_duration_address: source.address,
+              atdc_source_soi_map: soiSource,
               atdc_soi_default: atdcToolSoi,
               category: "Injection system",
               subcategory: "ATDC",
-              description: `ATDC = TI - SOI | source: ${source.name}`,
+              description: `ATDC = TI(cellule) - SOI(cellule) | TI: ${source.name} | SOI: ${soiSource.name}`,
             });
           }}
           onClose={() => setAtdcToolOpen(false)}

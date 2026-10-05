@@ -60,6 +60,8 @@ export interface ExportMapData {
   /** « OLS », « XDF » ou « JSON » : map venue d'un fichier de définitions
    *  importé, exportée telle que ce fichier la décrit. */
   external_source?: string | null;
+  map_type?: string;
+  virtual_readonly?: boolean;
 }
 
 type WinolsMap = Record<string, string>;
@@ -324,7 +326,9 @@ export function buildWinolsMappack(
     (m) =>
       typeof m.address === "number" &&
       m.address > 0 &&
-      !(m.name || "").toLowerCase().includes("(limp)")
+      !(m.name || "").toLowerCase().includes("(limp)") &&
+      m.map_type !== "atdc_virtual" &&
+      m.virtual_readonly !== true
   );
   const folders = buildFolderNames(valid);
 
@@ -367,7 +371,7 @@ export function serializeWinolsMappack(pack: { maps: WinolsMap[] }): Uint8Array 
   return bytes;
 }
 
-/** File name convention: "Mappack <project> ZedSuite.json" */
+/** File name convention: "Mappack <project> Breizh Reprog.json" */
 export function mappackFileName(projectName: string): string {
   const clean = (projectName || "project")
     .replace(/[\\/:*?"<>|]/g, " ")

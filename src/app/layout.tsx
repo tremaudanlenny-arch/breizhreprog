@@ -8,10 +8,6 @@ import { LocalBridge } from "@/components/local-bridge";
 import { AppBootstrap } from "@/components/app-bootstrap";
 import "./globals.css";
 
-// Inter embarquée (sous-ensemble latin, graisses 100 à 900) : le build ne
-// dépend plus de fonts.googleapis.com, ce qui le rend reproductible et
-// possible hors ligne (VM de build macOS et Linux). Fichier issu de Google
-// Fonts, licence OFL.
 const inter = localFont({
   src: "./fonts/inter-latin-variable.woff2",
   weight: "100 900",
@@ -19,8 +15,8 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "ZedSuite",
-  description: "Open source ECU map editor (Bosch EDC15/EDC16)",
+  title: "Breizh Reprog",
+  description: "Breizh Reprog - ECU map editor (Bosch EDC15/EDC16)",
 };
 
 export default function RootLayout({
@@ -29,7 +25,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="fr" suppressHydrationWarning>
       <body className={inter.className}>
         <LocalBridge>
           <ThemeProvider

@@ -6501,33 +6501,9 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   // moteur invisible dédié : l'utilisateur n'a PAS besoin d'ouvrir une
   // fenêtre Duration/SOI. MapViewer publie ainsi ses valeurs canoniques et
   // ses axes vers mapPlot3DDataRef même quand la map est fermée.
-  const liveCalibrationMaps = useMemo(() => {
-    const liveCalibrationEnabled =
-      calibrationWorkspaceOpen ||
-      injectionCalculatorOpen ||
-      calibrationMathTool === "afr" ||
-      openMaps.some((map) => map.map_type === "atdc_virtual");
-    if (!liveCalibrationEnabled) return [];
-
-    const seen = new Set<number>();
-    const mapsForLiveEngine = calibrationMathTool === "afr"
-      ? [...atdcSourceMaps, ...atdcSoiMaps, ...mafMaps]
-      : [...atdcSourceMaps, ...atdcSoiMaps];
-    return mapsForLiveEngine.filter((map) => {
-      if (seen.has(map.address)) return false;
-      seen.add(map.address);
-      return true;
-    });
-  }, [
-    atdcSourceMaps,
-    atdcSoiMaps,
-    mafMaps,
-    calibrationWorkspaceOpen,
-    injectionCalculatorOpen,
-    calibrationMathTool,
-    openMaps,
-  ]);
-
+  // ATDC n'utilise plus de moteur MapViewer caché : son calcul est stable et
+  // autonome depuis les deux maps sources du fichier.
+  const liveCalibrationMaps: MapData[] = [];
 
   const renderToolsMenu = (placement: 'below' | 'side') => {
     const tools: Array<{ id: CalibrationMathTool; label: string; detail: string }> = [

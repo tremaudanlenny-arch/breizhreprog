@@ -24,7 +24,7 @@ type ViewMode = "text" | "2d" | "3d";
 
 // Cache pour mémoriser les données extraites de chaque map (par adresse)
 // Ce cache évite de recalculer les données à chaque changement de map
-const CACHE_VERSION = "2026-10-breizhreprog-atdc-v4-display-snapshots";
+const CACHE_VERSION = "2026-10-breizhreprog-atdc-v5-always-live";
 
 // Map globale pour sauvegarder les positions de caméra de chaque map 3D
 // Persiste entre les montages/démontages du composant
@@ -3299,109 +3299,179 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     let colsReversed = xLabelsWereReversed;
      
 
-    // ATDC live : calcul physique RPM/IQ puis génération d'une grille
-    // X=IQ / Y=RPM. Duration et SOI peuvent avoir leurs axes dans des ordres
-    // différents : chaque map est donc échantillonnée avec SES propres axes.
-    if (isAtdcVirtual && liveMapSnapshots) {
-      const durationSnapshot = liveMapSnapshots.get(sourceMapAddress);
-      const soiSnapshot = atdcSoiMap ? liveMapSnapshots.get(atdcSoiMap.address) : undefined;
-      const durationValues = durationSnapshot?.mapValues;
+    // ATDC live : toujours produire une valeur, même avant que le snapshot
+    // du moteur caché soit disponible. La première ouverture doit déjà afficher
+    // TI-SOI ; ensuite les snapshots prennent le relais pour refléter les edits.
+    if (isAtdcVirtual) {
+      const durationSnapshot = liveMapSnapshots?.get(sourceMapAddress);
+      const soiSnapshot = atdcSoiMap ? liveMapSnapshots?.get(atdcSoiMap.address) : undefined;
+
+      const durationValues = durationSnapshot?.mapValues?.length
+        ? durationSnapshot.mapValues
+        : values.map((row) => [...row]);
+      const durationX = durationSnapshot?.xAxisLabels?.length
+        ? durationSnapshot.xAxisLabels
+        : [...xLabels];
+      const durationY = durationSnapshot?.yAxisLabels?.length
+        ? durationSnapshot.yAxisLabels
+        : [...yLabels];
+
       const soiValues = soiSnapshot?.mapValues;
-      const durationX = durationSnapshot?.xAxisLabels ?? [];
-      const durationY = durationSnapshot?.yAxisLabels ?? [];
       const soiX = soiSnapshot?.xAxisLabels ?? [];
       const soiY = soiSnapshot?.yAxisLabels ?? [];
 
-      const nums = (axis: string[]) => axis.map(v => Number.parseFloat(String(v)));
+      const nums = (axis: string[]) =>
+        axis.map((v) => Number.parseFloat(String(v))).filter(Number.isFinite);
+
       const axisKind = (label: string | undefined, axis: string[]): "rpm" | "iq" | "other" => {
-        const t = String(label || "").toLowerCase();
-        if (t.includes("rpm") || t.includes("engine speed")) return "rpm";
-        if (t.includes("iq") || t.includes("mg/st") || t.includes("mg/stroke")) return "iq";
-        const v = nums(axis).filter(Number.isFinite);
+        const text = String(label || "").toLowerCase();
+        if (text.includes("rpm") || text.includes("engine speed")) return "rpm";
+        if (text.includes("iq") || text.includes("mg/st") || text.includes("mg/stroke")) return "iq";
+        const v = nums(axis);
         if (v.length >= 2) {
-          const min = Math.min(...v), max = Math.max(...v);
+          const min = Math.min(...v);
+          const max = Math.max(...v);
           if (max > 200 || min >= 250) return "rpm";
           if (max <= 200) return "iq";
         }
         return "other";
       };
-      const bracket = (axis: number[], target: number) => {
-        if (!axis.length || !Number.isFinite(target)) return null;
-        if (axis.length === 1) return { i0: 0, i1: 0, t: 0 };
-        const asc = axis[0] <= axis[axis.length - 1];
-        const w = asc ? axis : [...axis].reverse();
-        let j = 0;
-        if (target <= w[0]) j = 0;
-        else if (target >= w[w.length - 1]) j = w.length - 2;
-        else for (let i=0;i<w.length-1;i++) if (target >= w[i] && target <= w[i+1]) { j=i; break; }
-        const a=w[j], b=w[j+1], t=b===a?0:(target-a)/(b-a);
-        return asc ? {i0:j,i1:j+1,t} : {i0:axis.length-1-j,i1:axis.length-1-(j+1),t};
-      };
-      const sample = (matrix: number[][], xAxis: string[], yAxis: string[], x: number, y: number): number | null => {
-        if (!matrix.length || !matrix[0]?.length) return null;
-        const xs=nums(xAxis), ys=nums(yAxis);
-        if (matrix.length === 1 || matrix[0].length === 1) {
-          const one=matrix.length===1?matrix[0]:matrix.map(r=>r[0]);
-          const ax=matrix.length===1?xs:ys, target=matrix.length===1?x:y;
-          const b=bracket(ax,target); if(!b) return Number.isFinite(one[0])?one[0]:null;
-          const a=one[b.i0]??one[0], d=one[b.i1]??a; return a+(d-a)*b.t;
-        }
-        const xb=bracket(xs,x), yb=bracket(ys,y); if(!xb||!yb) return null;
-        const q11=matrix[yb.i0]?.[xb.i0], q21=matrix[yb.i0]?.[xb.i1], q12=matrix[yb.i1]?.[xb.i0], q22=matrix[yb.i1]?.[xb.i1];
-        if (![q11,q21,q12,q22].every(Number.isFinite)) return null;
-        const a=q11+(q21-q11)*xb.t, b=q12+(q22-q12)*xb.t; return a+(b-a)*yb.t;
-      };
 
-      // VAGTuner expose un alignement SOI par « nearest index » pour
-      // remettre une table source sur les axes de la Duration. On reprend
-      // cette logique ici : chaque cellule ATDC choisit le point SOI physique
-      // le plus proche, au lieu de lisser artificiellement la SOI.
-      const sampleNearest = (matrix: number[][], xAxis: string[], yAxis: string[], x: number, y: number): number | null => {
-        if (!matrix.length || !matrix[0]?.length) return null;
-        const xs = nums(xAxis), ys = nums(yAxis);
-        const nearest = (axis: number[], target: number) => {
-          if (!axis.length || !Number.isFinite(target)) return -1;
-          let best = 0;
-          let distance = Math.abs(axis[0] - target);
-          for (let i = 1; i < axis.length; i++) {
-            const d = Math.abs(axis[i] - target);
-            if (d < distance) {
-              distance = d;
-              best = i;
-            }
+      const nearestIndex = (axis: number[], target: number) => {
+        if (!axis.length || !Number.isFinite(target)) return -1;
+        let best = 0;
+        let dist = Math.abs(axis[0] - target);
+        for (let i = 1; i < axis.length; i++) {
+          const d = Math.abs(axis[i] - target);
+          if (d < dist) {
+            dist = d;
+            best = i;
           }
-          return best;
-        };
-        const xi = nearest(xs, x), yi = nearest(ys, y);
-        if (xi < 0 || yi < 0) return null;
-        if (matrix.length === 1) return matrix[0]?.[xi] ?? null;
-        if (matrix[0]?.length === 1) return matrix[yi]?.[0] ?? null;
-        return matrix[yi]?.[xi] ?? null;
+        }
+        return best;
       };
 
-      const dXKind=axisKind(durationSnapshot?.xAxisLabel,durationX), dYKind=axisKind(durationSnapshot?.yAxisLabel,durationY);
-      const sXKind=axisKind(soiSnapshot?.xAxisLabel,soiX), sYKind=axisKind(soiSnapshot?.yAxisLabel,soiY);
-      const rpmAxis=dXKind==="rpm"?durationX:dYKind==="rpm"?durationY:[];
-      const iqAxis=dXKind==="iq"?durationX:dYKind==="iq"?durationY:[];
+      const sampleNearest = (
+        matrix: number[][],
+        xAxis: string[],
+        yAxis: string[],
+        xTarget: number,
+        yTarget: number,
+      ): number | null => {
+        if (!matrix.length || !matrix[0]?.length) return null;
+        const xs = nums(xAxis);
+        const ys = nums(yAxis);
+        const xi = nearestIndex(xs, xTarget);
+        const yi = nearestIndex(ys, yTarget);
+        if (xi < 0 || yi < 0) return null;
+        if (matrix.length === 1) return Number(matrix[0]?.[xi]);
+        if (matrix[0]?.length === 1) return Number(matrix[yi]?.[0]);
+        const value = matrix[yi]?.[xi];
+        return Number.isFinite(value) ? Number(value) : null;
+      };
 
-      if (durationValues?.length && durationValues[0]?.length && rpmAxis.length && iqAxis.length) {
-        const liveAtdc = rpmAxis.map(rpmText => {
-          const rpm=Number.parseFloat(String(rpmText));
-          return iqAxis.map(iqText => {
-            const iq=Number.parseFloat(String(iqText));
-            const dX=dXKind==="rpm"?rpm:dXKind==="iq"?iq:durationX[0] ? Number.parseFloat(durationX[0]) : rpm;
-            const dY=dYKind==="rpm"?rpm:dYKind==="iq"?iq:durationY[0] ? Number.parseFloat(durationY[0]) : iq;
-            const ti=sample(durationValues,durationX,durationY,dX,dY);
+      const dXKind = axisKind(durationSnapshot?.xAxisLabel, durationX);
+      const dYKind = axisKind(durationSnapshot?.yAxisLabel, durationY);
+      const sXKind = axisKind(soiSnapshot?.xAxisLabel, soiX);
+      const sYKind = axisKind(soiSnapshot?.yAxisLabel, soiY);
+
+      const rpmAxis = dXKind === "rpm"
+        ? durationX
+        : dYKind === "rpm"
+          ? durationY
+          : [];
+      const iqAxis = dXKind === "iq"
+        ? durationX
+        : dYKind === "iq"
+          ? durationY
+          : [];
+
+      if (
+        durationValues.length &&
+        durationValues[0]?.length &&
+        rpmAxis.length &&
+        iqAxis.length
+      ) {
+        const durationNumsX = nums(durationX);
+        const durationNumsY = nums(durationY);
+
+        const sampleDuration = (rpm: number, iq: number): number | null => {
+          const x = dXKind === "rpm"
+            ? rpm
+            : dXKind === "iq"
+              ? iq
+              : durationNumsX[0];
+          const y = dYKind === "rpm"
+            ? rpm
+            : dYKind === "iq"
+              ? iq
+              : durationNumsY[0];
+
+          const xi = nearestIndex(durationNumsX, x);
+          const yi = nearestIndex(durationNumsY, y);
+          if (xi < 0 || yi < 0) return null;
+
+          if (durationValues.length === 1) {
+            return Number(durationValues[0]?.[xi]);
+          }
+          if (durationValues[0]?.length === 1) {
+            return Number(durationValues[yi]?.[0]);
+          }
+          const value = durationValues[yi]?.[xi];
+          return Number.isFinite(value) ? Number(value) : null;
+        };
+
+        const sampleSoi = (rpm: number, iq: number, durationRow: number, durationCol: number): number | null => {
+          if (soiValues?.length && soiValues[0]?.length && soiX.length && soiY.length) {
+            const x = sXKind === "rpm" ? rpm : sXKind === "iq" ? iq : rpm;
+            const y = sYKind === "rpm" ? rpm : sYKind === "iq" ? iq : iq;
+            return sampleNearest(soiValues, soiX, soiY, x, y);
+          }
+
+          // Fallback avant le premier snapshot SOI :
+          // on lit directement la map source avec la même correspondance
+          // d'indices que la version ATDC qui fonctionnait auparavant.
+          if (atdcSoiMap && soiLayout) {
+            const sourceRows = durationValues.length;
+            const sourceCols = durationValues[0]?.length ?? 0;
+            const soiRow = sourceRows > 1 && soiLayout.rows > 1
+              ? Math.round(durationRow * (soiLayout.rows - 1) / (sourceRows - 1))
+              : 0;
+            const soiCol = sourceCols > 1 && soiLayout.cols > 1
+              ? Math.round(durationCol * (soiLayout.cols - 1) / (sourceCols - 1))
+              : 0;
+            return readCorrectedSourceCell(
+              atdcSoiMap as typeof mapData,
+              atdcSoiMap.address,
+              soiRow,
+              soiCol,
+              soiLayout,
+            );
+          }
+          return null;
+        };
+
+        // Grille finale : Y = RPM, X = IQ.
+        const liveAtdc = rpmAxis.map((rpmText) => {
+          const rpm = Number.parseFloat(String(rpmText));
+          return iqAxis.map((iqText) => {
+            const iq = Number.parseFloat(String(iqText));
+            const durationRow = dYKind === "rpm"
+              ? nearestIndex(durationNumsY, rpm)
+              : nearestIndex(durationNumsY, iq);
+            const durationCol = dXKind === "rpm"
+              ? nearestIndex(durationNumsX, rpm)
+              : nearestIndex(durationNumsX, iq);
+            const ti = sampleDuration(rpm, iq);
             if (!Number.isFinite(ti)) return 0;
-            let soi:number|null=null;
-            if (soiValues?.length && soiValues[0]?.length && soiX.length && soiY.length) {
-              const sX=sXKind==="rpm"?rpm:sXKind==="iq"?iq:rpm;
-              const sY=sYKind==="rpm"?rpm:sYKind==="iq"?iq:iq;
-              soi=sampleNearest(soiValues,soiX,soiY,sX,sY);
-            }
-            return Number.isFinite(soi) ? Number(ti)-Number(soi) : Number(ti);
+
+            const soi = sampleSoi(rpm, iq, durationRow, durationCol);
+            return Number.isFinite(soi)
+              ? Number(ti) - Number(soi)
+              : Number(ti);
           });
         });
+
         values.splice(0, values.length, ...liveAtdc);
         xLabels.splice(0, xLabels.length, ...iqAxis);
         yLabels.splice(0, yLabels.length, ...rpmAxis);

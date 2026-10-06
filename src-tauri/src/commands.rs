@@ -146,15 +146,30 @@ pub fn import_map_definitions(
         return Err("empty file".to_string());
     }
 
-    let (format, maps) = if crate::xdf_import::looks_like_xdf(&data) {
+    let (mut format, maps) = if crate::xdf_import::looks_like_xdf(&data) {
         let text = String::from_utf8_lossy(&data);
-        ("XDF", crate::xdf_import::parse_xdf(&text, rom_size))
+        ("XDF".to_string(), crate::xdf_import::parse_xdf(&text, rom_size))
     } else if crate::mappack_import::looks_like_json(&data) {
         let text = String::from_utf8_lossy(&data);
-        ("JSON", crate::mappack_import::parse_mappack(&text, rom_size)?)
+        let vtkp = file_name.to_lowercase().ends_with(".vtkp");
+        (
+            if vtkp { "VTKP".to_string() } else { "JSON".to_string() },
+            crate::mappack_import::parse_mappack(&text, rom_size)?,
+        )
     } else {
         return Err("unsupported definition file".to_string());
     };
+
+    // Les .vtkp de VAGTuner et les mappacks JSON décrivent la même chose :
+    // on garde la provenance dans external_source pour que l'éditeur affiche
+    // un mappack distinct et que l'export puisse le distinguer.
+    for map in &mut maps.clone() {
+        let _ = map;
+    }
+    let mut maps = maps;
+    for map in &mut maps {
+        map.external_source = Some(format.clone());
+    }
 
     let byte_order = crate::mappack_import::dominant_byte_order(&maps).map(|s| s.to_string());
     log::warn!(

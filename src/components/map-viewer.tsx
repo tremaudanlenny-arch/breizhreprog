@@ -2460,7 +2460,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     const cacheKey = getCacheKey(mapData.address, projectName, fileName)
       + (isAtdcVirtual ? `_soi_${atdcSoiAddress}` : "");
     const fileDataHash = getFileDataHash(fileData, sourceMapAddress) + (isAtdcVirtual ? "_soi_" + getFileDataHash(fileData, atdcSoiAddress) : "");
-    const cached = mapDataCache.get(cacheKey);
+    const cached = isAtdcVirtual ? undefined : mapDataCache.get(cacheKey);
 
     // Get current dimensions from mapData (handle both 2D and 1D maps)
     let currentApiRows: number;
@@ -3339,7 +3339,9 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       invert: cacheInvert,
       scale: cacheScale,
     };
-    mapDataCache.set(cacheKey, cacheData);
+    if (!isAtdcVirtual) {
+      mapDataCache.set(cacheKey, cacheData);
+    }
 
     return {
       mapValues: values,

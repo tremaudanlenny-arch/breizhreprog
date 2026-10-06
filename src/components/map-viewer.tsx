@@ -668,6 +668,7 @@ export function MapViewer({
   modifyCommand,
   onViewInHexdump,
   isActive = false,
+  headless = false,
   ecuType,
 }: MapViewerProps) {
   // Le parent recrée l'objet displaySettings à chaque rendu : on n'en garde
@@ -4601,6 +4602,10 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     displayMapValues,
     isAtdcVirtual,
   ]);
+
+  if (headless) {
+    return <div aria-hidden="true" style={{ width: 1, height: 1, overflow: "hidden", pointerEvents: "none" }} />;
+  }
 
   // Mode 3D: structure alignée au layout principal
   if (viewMode === "3d") {

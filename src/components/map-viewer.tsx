@@ -3037,6 +3037,118 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       }
     }
     
+    // ATDC : grille physique de la SOI (axes réels RPM/IQ), indépendante
+    // de l'orientation d'affichage de la fenêtre SOI. VAGTuner décrit les SOI
+    // EDC15P typiquement X=IQ / Y=RPM, tandis que les Duration sont souvent
+    // X=RPM / Y=IQ. On conserve donc les deux grilles séparées.
+    const atdcSoiPhysicalGrid = (() => {
+      if (!isAtdcVirtual || !atdcSoiMap || !soiLayout) return null;
+      const source = atdcSoiMap as typeof mapData;
+      const axisSources = resolveAxisSources(source);
+      const axisRead = (address: number, count: number, correction: number, offsetValue: number): number[] => {
+        const out: number[] = [];
+        for (let i = 0; i < count; i++) {
+          const p = address + i * 2;
+          if (p < 0 || p + 1 >= fileData.length) {
+            out.push(NaN);
+            continue;
+          }
+          const raw = isBigEndianEcu(ecuType)
+            ? ((fileData[p] << 8) | fileData[p + 1])
+            : (fileData[p] | (fileData[p + 1] << 8));
+          out.push(raw * correction + offsetValue);
+        }
+        return out;
+      };
+
+      let xAxis = axisRead(
+        axisSources.x.address,
+        soiLayout.cols,
+        axisSources.x.correction,
+        axisSources.x.offset,
+      );
+      let yAxis = axisRead(
+        axisSources.y.address,
+        soiLayout.rows,
+        axisSources.y.correction,
+        axisSources.y.offset,
+      );
+
+      // resolveMapCellLayout applies rows_reversed during cell reads, so the
+      // corresponding physical Y axis must use the same orientation.
+      if (source.rows_reversed) yAxis = [...yAxis].reverse();
+
+      const matrix = Array.from({ length: soiLayout.rows }, (_, row) =>
+        Array.from({ length: soiLayout.cols }, (_, col) => {
+          return readCorrectedSourceCell(
+            source,
+            source.address,
+            row,
+            col,
+            soiLayout,
+          ) ?? NaN;
+        }),
+      );
+
+      return { xAxis, yAxis, matrix, xLabel: source.x_label || "", yLabel: source.y_label || "" };
+    })();
+
+    const atdcAxisKind = (label: string | undefined, axis: number[]): "rpm" | "iq" | "other" => {
+      const text = String(label || "").toLowerCase();
+      if (text.includes("rpm") || text.includes("engine speed")) return "rpm";
+      if (text.includes("iq") || text.includes("mg/st") || text.includes("mg/stroke") || text.includes("mg")) return "iq";
+      const finite = axis.filter(Number.isFinite);
+      if (finite.length >= 2) {
+        const min = Math.min(...finite);
+        const max = Math.max(...finite);
+        if (max > 200 || min >= 250) return "rpm";
+        if (max <= 200) return "iq";
+      }
+      return "other";
+    };
+
+    const atdcBracket = (axis: number[], target: number) => {
+      if (!axis.length || !Number.isFinite(target)) return null;
+      if (axis.length === 1) return { i0: 0, i1: 0, t: 0 };
+      const ascending = axis[0] <= axis[axis.length - 1];
+      const ordered = ascending ? axis : [...axis].reverse();
+      let j = 0;
+      if (target <= ordered[0]) j = 0;
+      else if (target >= ordered[ordered.length - 1]) j = ordered.length - 2;
+      else {
+        for (let i = 0; i < ordered.length - 1; i++) {
+          if (target >= ordered[i] && target <= ordered[i + 1]) {
+            j = i;
+            break;
+          }
+        }
+      }
+      const a = ordered[j];
+      const b = ordered[j + 1];
+      const t = b === a ? 0 : (target - a) / (b - a);
+      return ascending
+        ? { i0: j, i1: j + 1, t }
+        : { i0: axis.length - 1 - j, i1: axis.length - 1 - (j + 1), t };
+    };
+
+    const atdcSample = (
+      grid: { xAxis: number[]; yAxis: number[]; matrix: number[][] },
+      x: number,
+      y: number,
+    ): number | null => {
+      const xb = atdcBracket(grid.xAxis, x);
+      const yb = atdcBracket(grid.yAxis, y);
+      if (!xb || !yb) return null;
+      const q11 = grid.matrix[yb.i0]?.[xb.i0];
+      const q21 = grid.matrix[yb.i0]?.[xb.i1];
+      const q12 = grid.matrix[yb.i1]?.[xb.i0];
+      const q22 = grid.matrix[yb.i1]?.[xb.i1];
+      if (![q11, q21, q12, q22].every(Number.isFinite)) return null;
+      const a = q11 + (q21 - q11) * xb.t;
+      const b = q12 + (q22 - q12) * xb.t;
+      return a + (b - a) * yb.t;
+    };
+
     // CRITICAL: Read map data in row-major order
     // If axes are swapped, we need to transpose the data during reading
     // File stores data as: [row][col] where row = original Y, col = original X
@@ -3107,25 +3219,29 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
           const correctedValue = (rawValue * correction) + offsetValue;
           let finalValue = correctedValue;
 
-          if (isAtdcVirtual && atdcSoiMap && soiLayout) {
-            // The Duration and SOI maps can have different dimensions
-            // (e.g. Duration 00 = 10x10, SOI 90° = 14x16). Map them by
-            // normalized cell position so the top-right Duration cell uses
-            // the top-right SOI cell: 38 - 29 = 9.
-            const soiRow = rows > 1 && soiLayout.rows > 1
-              ? Math.round(row * (soiLayout.rows - 1) / (rows - 1))
-              : 0;
-            const soiCol = cols > 1 && soiLayout.cols > 1
-              ? Math.round(col * (soiLayout.cols - 1) / (cols - 1))
-              : 0;
-            const soiValue = readCorrectedSourceCell(
-              atdcSoiMap as typeof mapData,
-              atdcSoiMap.address,
-              soiRow,
-              soiCol,
-              soiLayout,
-            );
-            finalValue = soiValue == null ? 0 : correctedValue - soiValue;
+          if (isAtdcVirtual && atdcSoiMap && atdcSoiPhysicalGrid) {
+            const durationSource = mapData.atdc_source_duration_map ?? mapData;
+            const dXKind = atdcAxisKind(durationSource.x_label, xLabels.map(Number));
+            const dYKind = atdcAxisKind(durationSource.y_label, yLabels.map(Number));
+            const xPhysical = Number.parseFloat(String(xLabels[col] ?? ""));
+            const yPhysical = Number.parseFloat(String(yLabels[row] ?? ""));
+            const rpm =
+              dXKind === "rpm" ? xPhysical :
+              dYKind === "rpm" ? yPhysical :
+              yPhysical;
+            const iq =
+              dXKind === "iq" ? xPhysical :
+              dYKind === "iq" ? yPhysical :
+              xPhysical;
+
+            const sXKind = atdcAxisKind(atdcSoiPhysicalGrid.xLabel, atdcSoiPhysicalGrid.xAxis);
+            const sYKind = atdcAxisKind(atdcSoiPhysicalGrid.yLabel, atdcSoiPhysicalGrid.yAxis);
+            const soiX = sXKind === "rpm" ? rpm : sXKind === "iq" ? iq : rpm;
+            const soiY = sYKind === "rpm" ? rpm : sYKind === "iq" ? iq : iq;
+            const soiValue = atdcSample(atdcSoiPhysicalGrid, soiX, soiY);
+            if (soiValue != null && Number.isFinite(soiValue)) {
+              finalValue = correctedValue - soiValue;
+            }
           }
 
           rowValues.push(finalValue);
@@ -3299,55 +3415,8 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     let colsReversed = xLabelsWereReversed;
      
 
-    // ATDC : reprendre exactement la grille affichée de la Duration.
-    // VAGTuner/EDCsuite conservent la grille TI comme référence et réduisent
-    // la SOI à cette grille quand les dimensions diffèrent. C'est robuste pour
-    // Duration 00 10x10 + SOI 90° 14x16 sur EDC15P.
-    if (isAtdcVirtual && liveMapSnapshots) {
-      const durationSnapshot = liveMapSnapshots.get(sourceMapAddress);
-      const soiSnapshot = atdcSoiMap ? liveMapSnapshots.get(atdcSoiMap.address) : undefined;
-      const durationValues = durationSnapshot?.mapValues;
-      const soiValues = soiSnapshot?.mapValues;
-
-      if (
-        durationValues &&
-        durationValues.length > 0 &&
-        durationValues[0]?.length &&
-        soiValues &&
-        soiValues.length > 0 &&
-        soiValues[0]?.length
-      ) {
-        const tiRows = durationValues.length;
-        const tiCols = durationValues[0].length;
-        const soiRows = soiValues.length;
-        const soiCols = soiValues[0].length;
-
-        const liveAtdc = durationValues.map((row, r) =>
-          row.map((tiValue, c) => {
-            const soiRow = tiRows > 1 && soiRows > 1
-              ? Math.round(r * (soiRows - 1) / (tiRows - 1))
-              : 0;
-            const soiCol = tiCols > 1 && soiCols > 1
-              ? Math.round(c * (soiCols - 1) / (tiCols - 1))
-              : 0;
-            const soiValue = Number(soiValues[soiRow]?.[soiCol]);
-            return Number.isFinite(soiValue) ? Number(tiValue) - soiValue : Number(tiValue);
-          }),
-        );
-
-        values.splice(0, values.length, ...liveAtdc);
-        if (durationSnapshot.xAxisLabels?.length) {
-          xLabels.splice(0, xLabels.length, ...durationSnapshot.xAxisLabels);
-        }
-        if (durationSnapshot.yAxisLabels?.length) {
-          yLabels.splice(0, yLabels.length, ...durationSnapshot.yAxisLabels);
-        }
-        // Les axes de la Duration sont déjà alignés avec la grille de sortie.
-        needsAxisSwap = false;
-        rowsReversedCount = 0;
-        xLabelsWereReversed = false;
-      }
-    }
+    // ATDC : calculé directement à partir des deux maps sources du fichier.
+    // Aucun snapshot/MapViewer secondaire n'est utilisé ici.
 
     // Mettre en cache les résultats
     const cacheData: CachedMapData = {

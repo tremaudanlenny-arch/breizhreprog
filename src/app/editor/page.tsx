@@ -8952,8 +8952,6 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               address: 0xD0000000 + (source.address & 0x00FFFFFF),
               map_type: "atdc_virtual",
               virtual_readonly: true,
-              x_label: "Injection quantity (IQ)",
-              y_label: "Engine speed (rpm)",
               atdc_source_duration_address: source.address,
               atdc_source_duration_map: source,
               atdc_source_soi_map: soiSource,

@@ -2153,6 +2153,11 @@ function EditorPageContent() {
   
   // Fenêtres ouvertes (maps) et états associés
   const [openMaps, setOpenMaps] = useState<MapData[]>([]);
+  // Ref pour que le moteur live ATDC sache si une carte dérivée est ouverte
+  // sans recréer le callback à chaque rendu.
+  const openMapsRef = useRef<MapData[]>([]);
+  openMapsRef.current = openMaps;
+
   const [mapViewModes, setMapViewModes] = useState<Map<number, "text" | "2d" | "3d">>(new Map());
   const [mapEasyViewStatus, setMapEasyViewStatus] = useState<Map<number, boolean>>(new Map());
   // ATDC tool: the derived map is ephemeral and never added to the sidebar.
@@ -6944,7 +6949,14 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     // Une carte ATDC est une vue dérivée : elle ne doit pas incrémenter sa
     // propre révision live, sinon elle se republie elle-même en boucle.
     if (!data.isAtdcVirtual) {
-      setMapSnapshotVersion((version) => version + 1);
+      const atdcMap = openMapsRef.current.find((map) => map.map_type === "atdc_virtual");
+      const isAtdcSource =
+        !!atdcMap &&
+        (mapAddress === atdcMap.atdc_source_duration_address ||
+          mapAddress === atdcMap.atdc_source_soi_map?.address);
+      if (isAtdcSource) {
+        setMapSnapshotVersion((version) => version + 1);
+      }
     }
     if (activeMapAddressRef.current === mapAddress && showPreviewWindowRef.current) {
       setPreviewDataVersion(prev => prev + 1);

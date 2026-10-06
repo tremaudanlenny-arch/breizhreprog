@@ -34,6 +34,7 @@ import {
   Search,
   FileUp,
   Calculator,
+  Layers3,
   Keyboard,
   Zap,
   SlidersHorizontal,
@@ -97,6 +98,7 @@ import { CalibrationMathToolModal, type CalibrationMathTool } from "@/components
 import { PromptModal } from "@/components/prompt-modal";
 import { MultimapModal } from "@/components/multimap-modal";
 import { MappackManagerModal } from "@/components/mappack-manager-modal";
+import { VAGTUNER_PACKS, detectVagtunerVehicleHint, scoreVagtunerPack } from "@/lib/vagtuner-catalog";
 import { correctChecksumByEcuType, isChecksumSupported, ChecksumResult } from "@/lib/ecu/bosch/checksums";
 import { disableDTC, enableDTC, detectDTCs, type DetectedDTC, type CodeblockInfo } from "@/lib/ecu/bosch/dtc";
 import { saveBytesToFile } from "@/lib/local/save-file";

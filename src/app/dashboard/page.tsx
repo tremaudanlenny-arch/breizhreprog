@@ -28,6 +28,7 @@ import { useI18n } from "@/contexts/i18n-context";
 import { useSettings } from "@/contexts/settings-context";
 import { DashboardBackground, useDashboardWallpaper } from "@/components/dashboard-background";
 import { openExternal, BREIZH_REPROG_REPO_URL, BREIZH_REPROG_RELEASES_URL } from "@/lib/open-external";
+import { checkForUpdate, UPDATE_AVAILABLE_EVENT, type UpdateInfo } from "@/lib/update";
 import { RoadmapModal } from "@/components/roadmap-modal";
 import { formatBytes } from "@/lib/format-bytes";
 import packageJson from "../../../package.json";
@@ -527,6 +528,27 @@ function DashboardContent() {
   const router = useRouter();
   const { toast } = useToast();
   const { t, language } = useI18n();
+
+  const handleManualUpdateCheck = async () => {
+    try {
+      const info: UpdateInfo = await checkForUpdate();
+      if (info.update_available) {
+        window.dispatchEvent(new CustomEvent(UPDATE_AVAILABLE_EVENT, { detail: info }));
+        setShowAbout(false);
+      } else {
+        toast({
+          title: "Mise à jour",
+          description: `Vous êtes à jour (v${info.current_version}).`,
+        });
+      }
+    } catch {
+      toast({
+        title: "Mise à jour",
+        description: "Impossible de vérifier les mises à jour. Vérifiez votre connexion.",
+        variant: "destructive",
+      });
+    }
+  };
 
   const handleUploadClick = () => {
     setShowUploadModal(true);
@@ -1340,6 +1362,13 @@ function DashboardContent() {
             <div className={`rounded-md border p-3 mb-3 ${theme === "light" ? "border-black/[0.08] bg-black/[0.04]" : "border-white/[0.08] bg-white/[0.03]"}`}>
               <p className={`text-sm font-semibold mb-1 ${theme === "light" ? "text-slate-900" : "text-white"}`}>{t.appInfo.updatesTitle}</p>
               <p className={`text-sm ${theme === "light" ? "text-slate-600" : "text-white/60"}`}>{t.appInfo.updatesText}</p>
+              <button
+                type="button"
+                onClick={() => void handleManualUpdateCheck()}
+                className={`mt-3 rounded-lg px-3 py-2 text-xs font-semibold border transition-colors ${theme === "light" ? "border-black/10 text-slate-800 hover:bg-black/5" : "border-white/10 text-white/80 hover:bg-white/10"}`}
+              >
+                Vérifier maintenant
+              </button>
               {/* Liste complète des mises à jour, avec le détail de chacune (sur demande) */}
               <p className={`text-sm mt-2 ${theme === "light" ? "text-slate-600" : "text-white/60"}`}>
                 {t.updateDialog.allReleases}{" "}

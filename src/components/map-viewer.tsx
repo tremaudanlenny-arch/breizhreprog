@@ -3344,26 +3344,24 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
           : { i0: axis.length - 1 - j, i1: axis.length - 1 - (j + 1), t };
       };
 
-      const sample2d = (matrix: number[][], xAxis: number[], yAxis: number[], x: number, y: number): number | null => {
+      const sample2d = (matrix: number[][], xAxis: number[], yAxis: number[], xValue: number, yValue: number): number | null => {
         if (!matrix.length || !matrix[0]?.length) return null;
         const rows = matrix.length;
         const cols = matrix[0].length;
-        const x = numericAxis(xAxis);
-        const yy = numericAxis(yAxis);
+        const xNums = numericAxis(xAxis);
+        const yNums = numericAxis(yAxis);
         if (rows === 1 || cols === 1) {
           const oneD = rows === 1 ? matrix[0] : matrix.map((row) => row[0]);
-          const axis = rows === 1 ? x : yy;
-          const target = rows === 1 ? x : yy;
-          const targetValue = rows === 1 ? xAxis.length ? xAxis.length : target : y;
-          void targetValue;
-          const br = findBracket(axis, rows === 1 ? x : y);
+          const axis = rows === 1 ? xNums : yNums;
+          const target = rows === 1 ? xValue : yValue;
+          const br = findBracket(axis, target);
           if (!br) return Number.isFinite(oneD[0]) ? oneD[0] : null;
           const a = oneD[br.i0] ?? oneD[0];
           const b = oneD[br.i1] ?? a;
           return a + (b - a) * br.t;
         }
-        const xb = findBracket(x, x);
-        const yb = findBracket(yy, y);
+        const xb = findBracket(xNums, xValue);
+        const yb = findBracket(yNums, yValue);
         if (!xb || !yb) return null;
         const q11 = matrix[yb.i0]?.[xb.i0];
         const q21 = matrix[yb.i0]?.[xb.i1];

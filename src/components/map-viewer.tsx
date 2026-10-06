@@ -3352,6 +3352,33 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         const a=q11+(q21-q11)*xb.t, b=q12+(q22-q12)*xb.t; return a+(b-a)*yb.t;
       };
 
+      // VAGTuner expose un alignement SOI par « nearest index » pour
+      // remettre une table source sur les axes de la Duration. On reprend
+      // cette logique ici : chaque cellule ATDC choisit le point SOI physique
+      // le plus proche, au lieu de lisser artificiellement la SOI.
+      const sampleNearest = (matrix: number[][], xAxis: string[], yAxis: string[], x: number, y: number): number | null => {
+        if (!matrix.length || !matrix[0]?.length) return null;
+        const xs = nums(xAxis), ys = nums(yAxis);
+        const nearest = (axis: number[], target: number) => {
+          if (!axis.length || !Number.isFinite(target)) return -1;
+          let best = 0;
+          let distance = Math.abs(axis[0] - target);
+          for (let i = 1; i < axis.length; i++) {
+            const d = Math.abs(axis[i] - target);
+            if (d < distance) {
+              distance = d;
+              best = i;
+            }
+          }
+          return best;
+        };
+        const xi = nearest(xs, x), yi = nearest(ys, y);
+        if (xi < 0 || yi < 0) return null;
+        if (matrix.length === 1) return matrix[0]?.[xi] ?? null;
+        if (matrix[0]?.length === 1) return matrix[yi]?.[0] ?? null;
+        return matrix[yi]?.[xi] ?? null;
+      };
+
       const dXKind=axisKind(durationSnapshot?.xAxisLabel,durationX), dYKind=axisKind(durationSnapshot?.yAxisLabel,durationY);
       const sXKind=axisKind(soiSnapshot?.xAxisLabel,soiX), sYKind=axisKind(soiSnapshot?.yAxisLabel,soiY);
       const rpmAxis=dXKind==="rpm"?durationX:dYKind==="rpm"?durationY:[];
@@ -3370,7 +3397,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
             if (soiValues?.length && soiValues[0]?.length && soiX.length && soiY.length) {
               const sX=sXKind==="rpm"?rpm:sXKind==="iq"?iq:rpm;
               const sY=sYKind==="rpm"?rpm:sYKind==="iq"?iq:iq;
-              soi=sample(soiValues,soiX,soiY,sX,sY);
+              soi=sampleNearest(soiValues,soiX,soiY,sX,sY);
             }
             return Number.isFinite(soi) ? Number(ti)-Number(soi) : Number(ti);
           });

@@ -7661,7 +7661,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                 src="/breizh-reprog-logo.svg"
                 alt="Breizh Reprog X Ninnin Projet Perf"
                 data-tauri-drag-region
-                className="relative block w-full max-w-[322px] h-auto object-contain drop-shadow-[0_0_26px_rgba(168,85,247,0.95)] transition-transform duration-300 hover:scale-[1.01]"
+                className="relative block w-[420px] max-w-none h-auto object-contain drop-shadow-[0_0_30px_rgba(168,85,247,0.98)] transition-transform duration-300 hover:scale-[1.015]"
               />
             </div>
           </div>

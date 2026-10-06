@@ -10,6 +10,8 @@ interface MappackExportModalProps {
   onClose: () => void;
   onConfirm: () => void;
   cost: number;
+  format: "json" | "vtkp";
+  onFormatChange: (format: "json" | "vtkp") => void;
   isClosing?: boolean;
   isExporting?: boolean;
   exportComplete?: boolean;
@@ -22,6 +24,8 @@ export function MappackExportModal({
   onClose,
   onConfirm,
   cost,
+  format,
+  onFormatChange,
   isClosing = false,
   isExporting = false,
   exportComplete = false,
@@ -96,7 +100,30 @@ export function MappackExportModal({
               <div className="mt-4 text-center space-y-1">
                 <p className="text-sm" style={{ color: L ? 'rgba(0, 0, 0, 0.55)' : 'rgba(255, 255, 255, 0.6)' }}>
                   {description ?? t.mappackExport.description}
-                </p>
+                </p>                {/* Format compatible WinOLS / VAGTuner */}
+                <div className="flex gap-2 mt-4">
+                  {([
+                    ["json", "WinOLS JSON"],
+                    ["vtkp", "VAGTuner .vtkp"],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => onFormatChange(value)}
+                      className="flex-1 rounded-lg px-3 py-2 text-xs font-semibold transition"
+                      style={{
+                        background: format === value
+                          ? (L ? "rgba(124,58,237,.12)" : "rgba(124,58,237,.18)")
+                          : (L ? "rgba(0,0,0,.04)" : "rgba(255,255,255,.04)"),
+                        color: format === value ? (L ? "#6d28d9" : "#ddd6fe") : (L ? "#374151" : "rgba(255,255,255,.65)"),
+                        border: format === value ? "1px solid rgba(139,92,246,.55)" : "1px solid rgba(255,255,255,.08)",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
                 {/* Local app: export is free and unlimited — the cost line only
                     shows when a cost is actually configured (never by default) */}
                 {cost > 0 && (

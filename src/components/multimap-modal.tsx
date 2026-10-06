@@ -17,6 +17,7 @@ interface MultimapModalProps {
   currentVersionId: string | null;
   vehicleHint: string;
   vagtunerCandidates: Array<{ pack: VagtunerPack; score: number }>;
+  allVagtunerPacks: VagtunerPack[];
   onSelectVersion: (id: string) => void;
   onImportVagtunerPack: (pack: VagtunerPack) => void;
   onClose: () => void;
@@ -40,6 +41,7 @@ export function MultimapModal({
   currentVersionId,
   vehicleHint,
   vagtunerCandidates,
+  allVagtunerPacks,
   onSelectVersion,
   onImportVagtunerPack,
   onClose,
@@ -261,29 +263,39 @@ export function MultimapModal({
               Cartographie détectée : <strong style={{ color: text }}>{vehicleHint}</strong>
             </div>
 
-            {vagtunerCandidates.length > 0 ? (
-              <div className="grid gap-2">
-                {vagtunerCandidates.map(({ pack, score }) => (
-                  <div key={pack.id} className="flex items-center gap-3 rounded-xl border p-3" style={{ borderColor: border }}>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold truncate">{pack.name}</div>
-                      <div className="text-[10px]" style={{ color: muted }}>{pack.mapCount} maps · compatibilité {Math.min(100, score * 10)}%</div>
+            {vagtunerCandidates.length > 0 && (
+              <div className="mb-4">
+                <div className="text-[11px] font-semibold mb-2 text-emerald-400">Correspondances probables</div>
+                <div className="grid gap-2">
+                  {vagtunerCandidates.slice(0, 3).map(({ pack, score }) => (
+                    <div key={pack.id} className="flex items-center gap-3 rounded-xl border p-3" style={{ borderColor: border }}>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold truncate">{pack.name}</div>
+                        <div className="text-[10px]" style={{ color: muted }}>{pack.mapCount} maps · score {Math.min(100, score * 10)}%</div>
+                      </div>
+                      <button type="button" onClick={() => onImportVagtunerPack(pack)} className="px-3 py-2 rounded-lg bg-gradient-to-r from-sky-500 to-cyan-400 text-white text-xs font-semibold">
+                        Associer
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => onImportVagtunerPack(pack)}
-                      className="px-3 py-2 rounded-lg bg-gradient-to-r from-sky-500 to-cyan-400 text-white text-xs font-semibold"
-                    >
-                      Importer
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="rounded-lg px-3 py-3 text-xs" style={{ background: light ? "#f8fafc" : "rgba(255,255,255,.035)", color: muted }}>
-                Aucun mappack VTKP embarqué ne correspond exactement à cette cartographie. Tu peux importer ton .vtkp/.json/.xdf pour l'associer au fichier.
+                  ))}
+                </div>
               </div>
             )}
+
+            <div className="text-[11px] font-semibold mb-2" style={{ color: muted }}>Catalogue VAGTuner embarqué</div>
+            <div className="grid gap-2">
+              {allVagtunerPacks.map((pack) => (
+                <div key={pack.id} className="flex items-center gap-3 rounded-xl border p-3" style={{ borderColor: border }}>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate">{pack.name}</div>
+                    <div className="text-[10px]" style={{ color: muted }}>{pack.mapCount} maps · {pack.ecu}</div>
+                  </div>
+                  <button type="button" onClick={() => onImportVagtunerPack(pack)} className="px-3 py-2 rounded-lg border text-xs font-semibold" style={{ borderColor: border }}>
+                    Importer
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>

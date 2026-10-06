@@ -6505,96 +6505,51 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   // autonome depuis les deux maps sources du fichier.
   const liveCalibrationMaps: MapData[] = [];
 
-  const renderToolsMenu = (placement: 'below' | 'side') => {
-    const tools: Array<{ id: CalibrationMathTool; label: string; detail: string }> = [
-      { id: "iq-duration", label: "IQ → durée", detail: "Quantité → durée d'injection" },
-      { id: "afr", label: "Calculateur AFR", detail: "AFR uniquement" },
-      { id: "injector-flow", label: "Débit injecteur", detail: "Débit selon la pression" },
-      { id: "injection-duration", label: "Durée d'injection", detail: "Durée → quantité théorique" },
-      { id: "ramp", label: "Générateur de rampe", detail: "Rampe linéaire ou progressive" },
-    ];
-
-    return (
-      <div
-        className={`absolute z-[80] w-[300px] max-w-[calc(100vw-20px)] p-2 border rounded-2xl shadow-2xl ${placement === 'below' ? 'top-full right-0 mt-2' : 'top-0 left-full ml-2'}`}
-        style={{
-          backgroundColor: theme === 'light' ? 'rgba(255,255,255,0.97)' : theme === 'oled' ? 'rgba(12,12,15,0.98)' : 'rgba(20,23,32,0.97)',
-          backdropFilter: 'blur(22px) saturate(150%)',
-          WebkitBackdropFilter: 'blur(22px) saturate(150%)',
-          borderColor: getBorderColor(),
-          color: getTextColor(),
-        }}
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between px-2 pb-2">
-          <div>
-            <div className="text-[13px] font-bold tracking-wide">OUTILS</div>
-            <div className="text-[10px] opacity-50">Chaque outil séparément</div>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => {
-            setToolsMenuOpen(false);
-            openAtdcTool();
-          }}
-          className={`mb-2 w-full rounded-xl border px-3 py-3 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-purple-50' : 'hover:bg-purple-500/[0.08]'}`}
-          style={{ borderColor: getBorderColor() }}
-        >
-          <span className="flex items-center gap-2.5">
-            <Calculator className="h-4 w-4 text-violet-400" />
-            <span className="text-[12px] font-semibold">Calculateur ATDC</span>
-          </span>
-          <span className="mt-1 block pl-6 text-[10px] opacity-50">TI − SOI avec les axes RPM / IQ</span>
-        </button>
-
-        <div className="space-y-1.5">
-          {tools.map((tool) => (
-            <button
-              key={tool.id}
-              type="button"
-              onClick={() => {
-                setToolsMenuOpen(false);
-                setCalibrationMathTool(tool.id);
-              }}
-              className={`w-full rounded-xl border px-3 py-3 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-purple-50' : 'hover:bg-purple-500/[0.08]'}`}
-              style={{ borderColor: getBorderColor() }}
-            >
-              <span className="flex items-center gap-2.5">
-                <Calculator className="h-4 w-4 text-fuchsia-400" />
-                <span className="text-[12px] font-semibold">{tool.label}</span>
-              </span>
-              <span className="mt-1 block pl-6 text-[10px] opacity-50">{tool.detail}</span>
-            </button>
-          ))}
-        </div>
-        <div className="mt-2 pt-2 border-t" style={{ borderColor: getBorderColor() }}>
-          <button
-            type="button"
-            onClick={() => { setToolsMenuOpen(false); setMappackManagerOpen(true); }}
-            className="w-full text-left rounded-xl px-3 py-2.5 transition-colors hover:bg-white/10"
-            style={{ color: getTextColor() }}
-          >
-            <div className="text-sm font-semibold">Mappacks</div>
-            <div className="text-[10px] opacity-55">Importer / exporter JSON et VTKP</div>
-          </button>
-        </div>
-        <div className="mt-2 pt-2 border-t" style={{ borderColor: getBorderColor() }}>
-          <button
-            type="button"
-            onClick={() => { setToolsMenuOpen(false); setMultimapOpen(true); }}
-            className="w-full text-left rounded-xl px-3 py-2.5 transition-colors hover:bg-white/10"
-            style={{ color: getTextColor() }}
-          >
-            <div className="text-sm font-semibold">Multimap</div>
-            <div className="text-[10px] opacity-55">6 profils de calibration</div>
-          </button>
-        </div>
+  const renderToolsMenu = (placement: 'below' | 'side') => (
+    <div
+      className={`absolute z-[80] w-[300px] max-w-[calc(100vw-20px)] p-2 border rounded-2xl shadow-2xl ${placement === 'below' ? 'top-full right-0 mt-2' : 'top-0 left-full ml-2'}`}
+      style={{
+        backgroundColor: theme === 'light' ? 'rgba(255,255,255,0.97)' : theme === 'oled' ? 'rgba(12,12,15,0.98)' : 'rgba(20,23,32,0.97)',
+        backdropFilter: 'blur(22px) saturate(150%)',
+        WebkitBackdropFilter: 'blur(22px) saturate(150%)',
+        borderColor: getBorderColor(),
+        color: getTextColor(),
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="px-2 pb-2">
+        <div className="text-[13px] font-bold tracking-wide">OUTILS</div>
+        <div className="text-[10px] opacity-50">ATDC · Multimap</div>
       </div>
-    );
-  };
+
+      <button
+        type="button"
+        onClick={() => openAtdcTool()}
+        className={`w-full rounded-xl border px-3 py-3 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-purple-50' : 'hover:bg-purple-500/[0.08]'}`}
+        style={{ borderColor: getBorderColor() }}
+      >
+        <span className="flex items-center gap-2.5">
+          <Calculator className="h-4 w-4 text-violet-400" />
+          <span className="text-[12px] font-semibold">Calculateur ATDC</span>
+        </span>
+        <span className="mt-1 block pl-6 text-[10px] opacity-50">TI − SOI · X IQ / Y RPM</span>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => { setToolsMenuOpen(false); setMultimapOpen(true); }}
+        className={`mt-2 w-full rounded-xl border px-3 py-3 text-left transition-all hover:-translate-y-[1px] ${theme === 'light' ? 'hover:bg-purple-50' : 'hover:bg-purple-500/[0.08]'}`}
+        style={{ borderColor: getBorderColor() }}
+      >
+        <span className="flex items-center gap-2.5">
+          <Layers3 className="h-4 w-4 text-fuchsia-400" />
+          <span className="text-[12px] font-semibold">Multimap</span>
+        </span>
+        <span className="mt-1 block pl-6 text-[10px] opacity-50">3 profils · pédale / embrayage / manuel</span>
+      </button>
+    </div>
+  );
 
   const handleMapClick3D = (clicked: MapData) => {
     handleMapClick(clicked);

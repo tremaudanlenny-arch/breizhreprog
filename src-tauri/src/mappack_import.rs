@@ -126,10 +126,12 @@ fn data_org(word: &str) -> Option<(u32, bool, bool)> {
 }
 
 fn to_map(obj: &Value, rom_len: u32) -> Option<DetectedMap> {
+    // WinOLS/ZedSuite JSON et VAGTuner .vtkp utilisent des noms différents.
     let name = text_of(obj, "Name")
         .or_else(|| text_of(obj, "name"))
         .or_else(|| text_of(obj, "IdName"))
-        .or_else(|| text_of(obj, "title"))?;
+        .or_else(|| text_of(obj, "title"))
+        .or_else(|| text_of(obj, "Nom"))?;
     let name = name.trim().to_string();
     if name.is_empty() {
         return None;
@@ -139,10 +141,28 @@ fn to_map(obj: &Value, rom_len: u32) -> Option<DetectedMap> {
         .or_else(|| address_of(obj, "Fieldvalues.StartAddr"))
         .or_else(|| address_of(obj, "StartAddr.Cpu"))
         .or_else(|| address_of(obj, "address"))
-        .or_else(|| address_of(obj, "Address"))?;
+        .or_else(|| address_of(obj, "Address"))
+        .or_else(|| address_of(obj, "Adresse"))?;
 
-    let cols = number_of(obj, "Columns").or_else(|| number_of(obj, "cols")).unwrap_or(1.0).round();
-    let rows = number_of(obj, "Rows").or_else(|| number_of(obj, "rows")).unwrap_or(1.0).round();
+    let (cols, rows) = if let Some(size_text) = text_of(obj, "Taille") {
+        let parts: Vec<&str> = size_text.split(&['x', 'X', '×'][..]).map(str::trim).collect();
+        if parts.len() == 2 {
+            (
+                parts[0].replace(',', ".").parse::<f64>().ok().unwrap_or(1.0).round(),
+                parts[1].replace(',', ".").parse::<f64>().ok().unwrap_or(1.0).round(),
+            )
+        } else {
+            (
+                number_of(obj, "Columns").or_else(|| number_of(obj, "cols")).unwrap_or(1.0).round(),
+                number_of(obj, "Rows").or_else(|| number_of(obj, "rows")).unwrap_or(1.0).round(),
+            )
+        }
+    } else {
+        (
+            number_of(obj, "Columns").or_else(|| number_of(obj, "cols")).unwrap_or(1.0).round(),
+            number_of(obj, "Rows").or_else(|| number_of(obj, "rows")).unwrap_or(1.0).round(),
+        )
+    };
     if !(1.0..=MAX_DIM as f64).contains(&cols) || !(1.0..=MAX_DIM as f64).contains(&rows) {
         return None;
     }
@@ -150,6 +170,14 @@ fn to_map(obj: &Value, rom_len: u32) -> Option<DetectedMap> {
 
     let org = text_of(obj, "DataOrg")
         .or_else(|| text_of(obj, "data_org"))
+        .or_else(|| text_of(obj, "Lecture").map(|s| {
+            match s.trim() {
+                "8" => "eByte".to_string(),
+                "16" => "eLoHi".to_string(),
+                "32" => "eLoHiLoHi".to_string(),
+                _ => "eLoHi".to_string(),
+            }
+        }))
         .unwrap_or_else(|| "eLoHi".to_string());
     let (cell, little_endian, is_float) = data_org(&org)?;
     let signed = flag_of(obj, "bSigned") || flag_of(obj, "signed");
@@ -186,7 +214,10 @@ fn to_map(obj: &Value, rom_len: u32) -> Option<DetectedMap> {
     let mut d = DetectedMap::new(address, size as usize, dimensions, data_type);
     d.external_source = Some("JSON".to_string());
     d.name = Some(name.clone());
-    let comment = text_of(obj, "Comment").or_else(|| text_of(obj, "description")).unwrap_or_default();
+    let comment = text_of(obj, "Comment")
+        .or_else(|| text_of(obj, "description"))
+        .or_else(|| text_of(obj, "Description"))
+        .unwrap_or_default();
     d.description = Some(if comment.trim().is_empty() {
         format!("Imported definition {name}")
     } else {
@@ -197,22 +228,29 @@ fn to_map(obj: &Value, rom_len: u32) -> Option<DetectedMap> {
     let raw_folder = text_of(obj, "FolderName")
         .or_else(|| text_of(obj, "folder"))
         .or_else(|| text_of(obj, "category"))
+        .or_else(|| text_of(obj, "Categorie"))
+        .or_else(|| text_of(obj, "Catégorie"))
         .map(|f| f.trim().to_string())
         .filter(|f| !f.is_empty())
         .unwrap_or_else(|| "Other".to_string());
     let folder = raw_folder.strip_prefix("Z-").unwrap_or(&raw_folder).to_string();
     d.category = Some(folder.clone());
     d.subcategory = Some(folder);
-    d.unit = text_of(obj, "Fieldvalues.Unit").or_else(|| text_of(obj, "unit"));
+    d.unit = text_of(obj, "Fieldvalues.Unit")
+        .or_else(|| text_of(obj, "unit"))
+        .or_else(|| text_of(obj, "Unite"))
+        .or_else(|| text_of(obj, "Unité"));
     d.correction_factor = Some(
         number_of(obj, "Fieldvalues.Factor")
             .or_else(|| number_of(obj, "factor"))
+            .or_else(|| number_of(obj, "Facteur"))
             .filter(|f| f.is_finite() && *f != 0.0)
             .unwrap_or(1.0),
     );
     d.offset = Some(
         number_of(obj, "Fieldvalues.Offset")
             .or_else(|| number_of(obj, "offset"))
+            .or_else(|| number_of(obj, "Offset"))
             .filter(|f| f.is_finite())
             .unwrap_or(0.0),
     );
@@ -225,16 +263,32 @@ fn to_map(obj: &Value, rom_len: u32) -> Option<DetectedMap> {
         let addr = address_of(obj, &format!("{prefix}.DataAddr.Cpu"))
             .or_else(|| address_of(obj, &format!("{prefix}.DataAddr")))
             .or_else(|| address_of(obj, &format!("{alt}_address")))
+            .or_else(|| {
+                let key = if is_x { "AdresseX" } else { "AdresseY" };
+                address_of(obj, key)
+            })
             .filter(|a| *a > 0);
         let factor = number_of(obj, &format!("{prefix}.Factor"))
-            .or_else(|| number_of(obj, &format!("{alt}_correction")))
+            .or_else(|| number_of(obj, &format!("{alt}_correction"))
+            .or_else(|| {
+                let key = if is_x { "FacteurX" } else { "FacteurY" };
+                number_of(obj, key)
+            }))
             .filter(|f| f.is_finite() && *f != 0.0)
             .unwrap_or(1.0);
         let off = number_of(obj, &format!("{prefix}.Offset"))
-            .or_else(|| number_of(obj, &format!("{alt}_offset")))
+            .or_else(|| number_of(obj, &format!("{alt}_offset"))
+            .or_else(|| {
+                let key = if is_x { "OffsetX" } else { "OffsetY" };
+                number_of(obj, key)
+            }))
             .filter(|f| f.is_finite() && *f != 0.0);
         let label = text_of(obj, &format!("{prefix}.Name"))
-            .or_else(|| text_of(obj, &format!("{prefix}.Unit")))
+            .or_else(|| text_of(obj, &format!("{prefix}.Unit"))
+            .or_else(|| {
+                let key = if is_x { "UniteX" } else { "UniteY" };
+                text_of(obj, key)
+            }))
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
         if is_x {

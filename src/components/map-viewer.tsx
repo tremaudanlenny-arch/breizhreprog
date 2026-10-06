@@ -908,13 +908,13 @@ const skipAutoSizeRef = useRef<boolean>(false);
     [mapNameLowerDisplay]
   );
   const isInjectorDuration00Display = useMemo(
-    () => mapNameLowerDisplay.includes("injector duration 00") || mapNameLowerDisplay === "duration 00",
+    () => !isAtdcVirtual && (mapNameLowerDisplay.includes("injector duration 00") || mapNameLowerDisplay === "duration 00"),
     [mapNameLowerDisplay]
   );
   // Treat EDC16U34's "Duration NN" names as the same family as "Injector Duration NN"
   // when applying display-layer ordering decisions.
   const isInjectorDurationDisplay = useMemo(
-    () => mapNameLowerDisplay.includes("injector duration") || /^duration \d+$/.test(mapNameLowerDisplay),
+    () => !isAtdcVirtual && (mapNameLowerDisplay.includes("injector duration") || /^duration \d+$/.test(mapNameLowerDisplay)),
     [mapNameLowerDisplay]
   );
 

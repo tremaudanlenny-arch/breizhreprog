@@ -9049,7 +9049,17 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
           projectKey={projectData.project_name}
           versions={versions}
           currentVersionId={currentVersionId}
+          vehicleHint={vagtunerVehicleHint.label}
+          vagtunerCandidates={vagtunerCandidates}
           onSelectVersion={(id) => { handleSelectVersion(id); setMultimapOpen(false); }}
+          onImportVagtunerPack={(pack) => {
+            setMultimapOpen(false);
+            toast({
+              title: "Mappack VAGTuner",
+              description: "Sélectionne le fichier .vtkp correspondant à « " + pack.name + " » pour l'importer.",
+            });
+            definitionsInputRef.current?.click();
+          }}
           onClose={() => setMultimapOpen(false)}
         />
       )}

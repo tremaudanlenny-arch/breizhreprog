@@ -687,9 +687,9 @@ export function MapViewer({
   const theme = themeProp ?? themeContext;
   const { t } = useI18n();
   const isAtdcVirtual = mapData.map_type === "atdc_virtual";
-  // Une carte ATDC est recalculée quand une map Duration/SOI publie un nouveau
+  // Une carte ATDC est recalculée dès qu'une Duration/SOI publie un nouveau
   // snapshot. Les maps normales restent sur 0 pour ne pas invalider leur cache.
-  const atdcLiveSnapshotRevision = 0;
+  const atdcLiveSnapshotRevision = isAtdcVirtual ? liveSnapshotVersion : 0;
   const atdcSoi = mapData.atdc_soi_default ?? 90;
   const [atdcRenderOpen, setAtdcRenderOpen] = useState(false);
   const [atdcThreshold, setAtdcThreshold] = useState(0);
@@ -3299,26 +3299,157 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     let colsReversed = xLabelsWereReversed;
      
 
-    // ATDC stable : conserver l'orientation de la map Duration pendant la
-    // lecture puis forcer une seule présentation X=IQ / Y=RPM.
+    // ATDC live : toujours calculer sur les coordonnées PHYSIQUES RPM/IQ.
+    // Duration fournit la grille de sortie (ses vrais axes), puis SOI est
+    // interpolée sur ses propres axes. Ainsi :
+    //   - X ATDC = IQ provenant de Duration
+    //   - Y ATDC = RPM provenant de Duration
+    //   - TI = valeur Duration(RPM, IQ)
+    //   - SOI = valeur SOI(RPM, IQ)
+    //   - ATDC = TI - SOI
+    //
+    // On privilégie les snapshots live car ils contiennent les modifications
+    // non encore écrites dans la ROM. Sans snapshot disponible, on conserve
+    // la lecture actuelle comme fallback.
     if (isAtdcVirtual) {
-      const sourceMap = mapData.atdc_source_duration_map;
-      const xLabel = String(sourceMap?.x_label || mapData.x_label || "").toLowerCase();
-      const yLabel = String(sourceMap?.y_label || mapData.y_label || "").toLowerCase();
-      const xIsRpm = xLabel.includes("rpm") || xLabel.includes("engine speed");
-      const yIsIq = yLabel.includes("iq") || yLabel.includes("mg/st") || yLabel.includes("mg/stroke");
+      const sourceDurationAddress = mapData.atdc_source_duration_address ?? mapData.address;
+      const durationSnapshot = liveMapSnapshots?.get(sourceDurationAddress);
+      const soiSnapshot = atdcSoiMap ? liveMapSnapshots?.get(atdcSoiMap.address) : undefined;
 
-      if (xIsRpm && yIsIq && values.length && values[0]?.length) {
-        const transposed = values[0].map((_, col) => values.map(row => row[col]));
-        values.splice(0, values.length, ...transposed);
-        const oldX = [...xLabels];
-        xLabels.splice(0, xLabels.length, ...yLabels);
-        yLabels.splice(0, yLabels.length, ...oldX);
+      if (durationSnapshot?.mapValues?.length && durationSnapshot.mapValues[0]?.length) {
+        const dX = [...(durationSnapshot.xAxisLabels || [])];
+        const dY = [...(durationSnapshot.yAxisLabels || [])];
+        const dXNums = dX.map(v => Number.parseFloat(String(v)));
+        const dYNums = dY.map(v => Number.parseFloat(String(v)));
+
+        const axisKind = (label: string | undefined, valuesAxis: number[]): "rpm" | "iq" | "other" => {
+          const text = String(label || "").toLowerCase();
+          if (text.includes("rpm") || text.includes("engine speed")) return "rpm";
+          if (text.includes("iq") || text.includes("mg/st") || text.includes("mg/stroke")) return "iq";
+          const finite = valuesAxis.filter(Number.isFinite);
+          if (finite.length) {
+            const min = Math.min(...finite);
+            const max = Math.max(...finite);
+            if (max > 200 || min >= 250) return "rpm";
+            if (max <= 200) return "iq";
+          }
+          return "other";
+        };
+
+        const dXKind = axisKind(durationSnapshot.xAxisLabel, dXNums);
+        const dYKind = axisKind(durationSnapshot.yAxisLabel, dYNums);
+        const rpmAxis = dXKind === "rpm" ? dX : dYKind === "rpm" ? dY : [];
+        const iqAxis = dXKind === "iq" ? dX : dYKind === "iq" ? dY : [];
+
+        const bracket = (axis: number[], target: number) => {
+          if (!axis.length || !Number.isFinite(target)) return null;
+          if (axis.length === 1) return { i0: 0, i1: 0, t: 0 };
+          const ascending = axis[0] <= axis[axis.length - 1];
+          const work = ascending ? axis : [...axis].reverse();
+          let j = 0;
+          if (target <= work[0]) {
+            j = 0;
+          } else if (target >= work[work.length - 1]) {
+            j = work.length - 2;
+          } else {
+            for (let i = 0; i < work.length - 1; i++) {
+              if (target >= work[i] && target <= work[i + 1]) {
+                j = i;
+                break;
+              }
+            }
+          }
+          const a = work[j];
+          const b = work[j + 1];
+          const t = b === a ? 0 : (target - a) / (b - a);
+          return ascending
+            ? { i0: j, i1: j + 1, t }
+            : { i0: axis.length - 1 - j, i1: axis.length - 1 - (j + 1), t };
+        };
+
+        const sample2d = (
+          matrix: number[][],
+          xAxis: number[],
+          yAxis: number[],
+          xValue: number,
+          yValue: number,
+        ): number | null => {
+          if (!matrix.length || !matrix[0]?.length) return null;
+          const rows = matrix.length;
+          const cols = matrix[0].length;
+          if (rows === 1 || cols === 1) {
+            const oneD = rows === 1 ? matrix[0] : matrix.map(row => row[0]);
+            const axis = rows === 1 ? xAxis : yAxis;
+            const target = rows === 1 ? xValue : yValue;
+            const b = bracket(axis, target);
+            if (!b) return Number.isFinite(oneD[0]) ? oneD[0] : null;
+            const a = oneD[b.i0] ?? oneD[0];
+            const d = oneD[b.i1] ?? a;
+            return a + (d - a) * b.t;
+          }
+
+          const xb = bracket(xAxis, xValue);
+          const yb = bracket(yAxis, yValue);
+          if (!xb || !yb) return null;
+
+          const q11 = matrix[yb.i0]?.[xb.i0];
+          const q21 = matrix[yb.i0]?.[xb.i1];
+          const q12 = matrix[yb.i1]?.[xb.i0];
+          const q22 = matrix[yb.i1]?.[xb.i1];
+          if (![q11, q21, q12, q22].every(Number.isFinite)) return null;
+
+          const top = q11 + (q21 - q11) * xb.t;
+          const bottom = q12 + (q22 - q12) * xb.t;
+          return top + (bottom - top) * yb.t;
+        };
+
+        if (rpmAxis.length && iqAxis.length) {
+          let soiXKind: "rpm" | "iq" | "other" = "other";
+          let soiYKind: "rpm" | "iq" | "other" = "other";
+          const soiX = soiSnapshot?.xAxisLabels || [];
+          const soiY = soiSnapshot?.yAxisLabels || [];
+          const soiXNums = soiX.map(v => Number.parseFloat(String(v)));
+          const soiYNums = soiY.map(v => Number.parseFloat(String(v)));
+          if (soiSnapshot) {
+            soiXKind = axisKind(soiSnapshot.xAxisLabel, soiXNums);
+            soiYKind = axisKind(soiSnapshot.yAxisLabel, soiYNums);
+          }
+
+          const durationMatrix = durationSnapshot.mapValues;
+          const soiMatrix = soiSnapshot?.mapValues;
+
+          const liveAtdc = rpmAxis.map((rpmLabel) => {
+            const rpm = Number.parseFloat(String(rpmLabel));
+            return iqAxis.map((iqLabel) => {
+              const iq = Number.parseFloat(String(iqLabel));
+
+              const dQueryX = dXKind === "rpm" ? rpm : dXKind === "iq" ? iq : rpm;
+              const dQueryY = dYKind === "rpm" ? rpm : dYKind === "iq" ? iq : iq;
+              const ti = sample2d(durationMatrix, dXNums, dYNums, dQueryX, dQueryY);
+
+              if (!Number.isFinite(ti)) return 0;
+
+              let soiValue: number | null = null;
+              if (soiMatrix?.length && soiX.length && soiY.length) {
+                const sQueryX = soiXKind === "rpm" ? rpm : soiXKind === "iq" ? iq : rpm;
+                const sQueryY = soiYKind === "rpm" ? rpm : soiYKind === "iq" ? iq : iq;
+                soiValue = sample2d(soiMatrix, soiXNums, soiYNums, sQueryX, sQueryY);
+              }
+
+              return Number.isFinite(soiValue) ? Number(ti) - Number(soiValue) : Number(ti);
+            });
+          });
+
+          values.splice(0, values.length, ...liveAtdc);
+          xLabels.splice(0, xLabels.length, ...iqAxis);
+          yLabels.splice(0, yLabels.length, ...rpmAxis);
+          needsAxisSwap = false;
+          rowsReversedCount = 0;
+          xLabelsWereReversed = false;
+          rowsReversed = false;
+          colsReversed = false;
+        }
       }
-
-      needsAxisSwap = false;
-      rowsReversedCount = 0;
-      xLabelsWereReversed = false;
     }
 
     // Mettre en cache les résultats
@@ -3353,7 +3484,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       xAxisIsIndex,
       yAxisIsIndex,
     };
-  }, [mapData, fileData, projectName, fileName, displaySettings]);
+  }, [mapData, fileData, projectName, fileName, displaySettings, liveSnapshotVersion, liveMapSnapshots]);
 
   // Reset data when map changes to prevent showing stale data
   useEffect(() => {

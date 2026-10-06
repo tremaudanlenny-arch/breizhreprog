@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="700" viewBox="0 0 900 700" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="330" viewBox="0 40 1100 300" preserveAspectRatio="xMidYMid meet" role="img" aria-labelledby="title desc">
   <title id="title">Breizh Reprog X Ninnin Projet Perf</title>
   <desc id="desc">Breizh Reprog X Ninnin Projet Perf</desc>
   <defs>
@@ -17,7 +17,7 @@
       <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#000000" flood-opacity=".55"/>
     </filter>
   </defs>
-  <g filter="url(#shadow)" transform="translate(25 365) scale(0.812)">
+  <g filter="url(#shadow)" transform="translate(0 0) scale(1)">
     <path d="M30 235 C80 185 115 130 175 107 C212 92 248 86 290 94 C248 117 222 144 206 175 C187 212 160 245 118 270 Z"
           fill="url(#purple)" stroke="#16091f" stroke-width="8"/>
     <circle cx="940" cy="115" r="72" fill="#101018" stroke="url(#purple)" stroke-width="12"/>

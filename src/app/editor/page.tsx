@@ -95,6 +95,7 @@ import { CalibrationWorkspaceModal } from "@/components/calibration-workspace-mo
 import { CalibrationToolsModal } from "@/components/calibration-tools-modal";
 import { CalibrationMathToolModal, type CalibrationMathTool } from "@/components/calibration-math-tool-modal";
 import { PromptModal } from "@/components/prompt-modal";
+import { MultimapModal } from "@/components/multimap-modal";
 import { correctChecksumByEcuType, isChecksumSupported, ChecksumResult } from "@/lib/ecu/bosch/checksums";
 import { disableDTC, enableDTC, detectDTCs, type DetectedDTC, type CodeblockInfo } from "@/lib/ecu/bosch/dtc";
 import { saveBytesToFile } from "@/lib/local/save-file";
@@ -6421,6 +6422,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   // ailleurs ou à l'action choisie
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [multimapOpen, setMultimapOpen] = useState(false);
   const toolsMenuRef = useRef<HTMLDivElement | null>(null);
   const toolsMenuCollapsedRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -6589,6 +6591,17 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               <span className="mt-1 block pl-6 text-[10px] opacity-50">{tool.detail}</span>
             </button>
           ))}
+        </div>
+        <div className="mt-2 pt-2 border-t" style={{ borderColor: getBorderColor() }}>
+          <button
+            type="button"
+            onClick={() => { setToolsMenuOpen(false); setMultimapOpen(true); }}
+            className="w-full text-left rounded-xl px-3 py-2.5 transition-colors hover:bg-white/10"
+            style={{ color: getTextColor() }}
+          >
+            <div className="text-sm font-semibold">Multimap</div>
+            <div className="text-[10px] opacity-55">6 profils de calibration</div>
+          </button>
         </div>
       </div>
     );
@@ -9014,6 +9027,17 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
             });
           }}
           onClose={() => setCalibrationMathTool(null)}
+        />
+      )}
+
+      {multimapOpen && projectData && (
+        <MultimapModal
+          theme={theme}
+          projectKey={projectData.project_name}
+          versions={versions}
+          currentVersionId={currentVersionId}
+          onSelectVersion={(id) => { handleSelectVersion(id); setMultimapOpen(false); }}
+          onClose={() => setMultimapOpen(false)}
         />
       )}
 

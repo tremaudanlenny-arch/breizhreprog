@@ -2418,6 +2418,18 @@ function EditorPageContent() {
     setEditorZoom(clampEditorZoom(value));
   };
 
+  // Ctrl + molette = zoom de toute la page / webview.
+  // Capture pour passer avant Plotly/les cartes 3D et empêcher le zoom du navigateur.
+  useEffect(() => {
+    const onWheel = (event: WheelEvent) => {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setEditorZoom((z) => clampEditorZoom(z + (event.deltaY < 0 ? 5 : -5)));
+    };
+    document.addEventListener("wheel", onWheel, { capture: true, passive: false });
+    return () => document.removeEventListener("wheel", onWheel, true);
+  }, []);
 
   // Map Properties Modal state
   const [showMapPropertiesModal, setShowMapPropertiesModal] = useState(false);
@@ -7634,7 +7646,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               plateformes : même interface partout (demande du 09/09). Sur
               macOS cela le garde aussi à droite des feux de la fenêtre, à
               tous les zooms. */}
-          <div data-tauri-drag-region className="mb-4 flex items-center justify-center">
+          <div data-tauri-drag-region className="mb-4 flex items-center justify-start pl-1">
             <div data-tauri-drag-region className="relative inline-flex flex-col items-center gap-1 px-5 py-3 rounded-2xl overflow-visible">
               <div
                 data-tauri-drag-region

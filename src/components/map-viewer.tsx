@@ -689,7 +689,7 @@ export function MapViewer({
   const isAtdcVirtual = mapData.map_type === "atdc_virtual";
   // Une carte ATDC est recalculée dès qu'une Duration/SOI publie un nouveau
   // snapshot. Les maps normales restent sur 0 pour ne pas invalider leur cache.
-  const atdcLiveSnapshotRevision = isAtdcVirtual ? liveSnapshotVersion : 0;
+  const atdcLiveSnapshotRevision = 0;
   const atdcSoi = mapData.atdc_soi_default ?? 90;
   const [atdcRenderOpen, setAtdcRenderOpen] = useState(false);
   const [atdcThreshold, setAtdcThreshold] = useState(0);
@@ -3299,176 +3299,120 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     let colsReversed = xLabelsWereReversed;
      
 
-    // ATDC live : toujours produire une valeur, même avant que le snapshot
-    // du moteur caché soit disponible. La première ouverture doit déjà afficher
-    // TI-SOI ; ensuite les snapshots prennent le relais pour refléter les edits.
+    // ATDC STABLE : le calcul est autonome. Il ne dépend d'aucun snapshot
+    // d'une fenêtre Duration/SOI visible, ce qui évite les boucles de rendu.
+    // La Duration fournit la grille de sortie et la SOI est lue directement
+    // dans sa map source sur ses propres axes physiques.
     if (isAtdcVirtual) {
-      const durationSnapshot = liveMapSnapshots?.get(sourceMapAddress);
-      const soiSnapshot = atdcSoiMap ? liveMapSnapshots?.get(atdcSoiMap.address) : undefined;
-
-      const durationValues = durationSnapshot?.mapValues?.length
-        ? durationSnapshot.mapValues
-        : values.map((row) => [...row]);
-      const durationX = durationSnapshot?.xAxisLabels?.length
-        ? durationSnapshot.xAxisLabels
-        : [...xLabels];
-      const durationY = durationSnapshot?.yAxisLabels?.length
-        ? durationSnapshot.yAxisLabels
-        : [...yLabels];
-
-      const soiValues = soiSnapshot?.mapValues;
-      const soiX = soiSnapshot?.xAxisLabels ?? [];
-      const soiY = soiSnapshot?.yAxisLabels ?? [];
-
-      const nums = (axis: string[]) =>
-        axis.map((v) => Number.parseFloat(String(v))).filter(Number.isFinite);
+      const durationSource = mapData.atdc_source_duration_map ?? mapData;
+      const soiSource = atdcSoiMap;
+      const durationValues = values;
+      const durationX = [...xLabels];
+      const durationY = [...yLabels];
+      const durationLabels = resolveAxisLabels(durationSource);
 
       const axisKind = (label: string | undefined, axis: string[]): "rpm" | "iq" | "other" => {
         const text = String(label || "").toLowerCase();
         if (text.includes("rpm") || text.includes("engine speed")) return "rpm";
         if (text.includes("iq") || text.includes("mg/st") || text.includes("mg/stroke")) return "iq";
-        const v = nums(axis);
-        if (v.length >= 2) {
-          const min = Math.min(...v);
-          const max = Math.max(...v);
-          if (max > 200 || min >= 250) return "rpm";
+        const nums = axis.map(v => Number.parseFloat(String(v))).filter(Number.isFinite);
+        if (nums.length) {
+          const max = Math.max(...nums);
+          if (max > 200) return "rpm";
           if (max <= 200) return "iq";
         }
         return "other";
       };
 
-      const nearestIndex = (axis: number[], target: number) => {
-        if (!axis.length || !Number.isFinite(target)) return -1;
-        let best = 0;
-        let dist = Math.abs(axis[0] - target);
-        for (let i = 1; i < axis.length; i++) {
-          const d = Math.abs(axis[i] - target);
-          if (d < dist) {
-            dist = d;
-            best = i;
+      const dXKind = axisKind(durationLabels.xLabel, durationX);
+      const dYKind = axisKind(durationLabels.yLabel, durationY);
+      const rpmAxis = dXKind === "rpm" ? durationX : dYKind === "rpm" ? durationY : [];
+      const iqAxis = dXKind === "iq" ? durationX : dYKind === "iq" ? durationY : [];
+
+      if (durationValues.length && durationValues[0]?.length && rpmAxis.length && iqAxis.length) {
+        const nearestIndex = (axis: number[], target: number) => {
+          if (!axis.length || !Number.isFinite(target)) return -1;
+          let best = 0;
+          let bestDistance = Math.abs(axis[0] - target);
+          for (let i = 1; i < axis.length; i++) {
+            const distance = Math.abs(axis[i] - target);
+            if (distance < bestDistance) { best = i; bestDistance = distance; }
           }
-        }
-        return best;
-      };
+          return best;
+        };
 
-      const sampleNearest = (
-        matrix: number[][],
-        xAxis: string[],
-        yAxis: string[],
-        xTarget: number,
-        yTarget: number,
-      ): number | null => {
-        if (!matrix.length || !matrix[0]?.length) return null;
-        const xs = nums(xAxis);
-        const ys = nums(yAxis);
-        const xi = nearestIndex(xs, xTarget);
-        const yi = nearestIndex(ys, yTarget);
-        if (xi < 0 || yi < 0) return null;
-        if (matrix.length === 1) return Number(matrix[0]?.[xi]);
-        if (matrix[0]?.length === 1) return Number(matrix[yi]?.[0]);
-        const value = matrix[yi]?.[xi];
-        return Number.isFinite(value) ? Number(value) : null;
-      };
-
-      const dXKind = axisKind(durationSnapshot?.xAxisLabel, durationX);
-      const dYKind = axisKind(durationSnapshot?.yAxisLabel, durationY);
-      const sXKind = axisKind(soiSnapshot?.xAxisLabel, soiX);
-      const sYKind = axisKind(soiSnapshot?.yAxisLabel, soiY);
-
-      const rpmAxis = dXKind === "rpm"
-        ? durationX
-        : dYKind === "rpm"
-          ? durationY
-          : [];
-      const iqAxis = dXKind === "iq"
-        ? durationX
-        : dYKind === "iq"
-          ? durationY
-          : [];
-
-      if (
-        durationValues.length &&
-        durationValues[0]?.length &&
-        rpmAxis.length &&
-        iqAxis.length
-      ) {
-        const durationNumsX = nums(durationX);
-        const durationNumsY = nums(durationY);
-
-        const sampleDuration = (rpm: number, iq: number): number | null => {
-          const x = dXKind === "rpm"
-            ? rpm
-            : dXKind === "iq"
-              ? iq
-              : durationNumsX[0];
-          const y = dYKind === "rpm"
-            ? rpm
-            : dYKind === "iq"
-              ? iq
-              : durationNumsY[0];
-
-          const xi = nearestIndex(durationNumsX, x);
-          const yi = nearestIndex(durationNumsY, y);
+        const dXNums = durationX.map(v => Number.parseFloat(String(v)));
+        const dYNums = durationY.map(v => Number.parseFloat(String(v)));
+        const getDuration = (rpm: number, iq: number): number | null => {
+          const xTarget = dXKind === "rpm" ? rpm : dXKind === "iq" ? iq : rpm;
+          const yTarget = dYKind === "rpm" ? rpm : dYKind === "iq" ? iq : iq;
+          const xi = nearestIndex(dXNums, xTarget);
+          const yi = nearestIndex(dYNums, yTarget);
           if (xi < 0 || yi < 0) return null;
-
-          if (durationValues.length === 1) {
-            return Number(durationValues[0]?.[xi]);
-          }
-          if (durationValues[0]?.length === 1) {
-            return Number(durationValues[yi]?.[0]);
-          }
           const value = durationValues[yi]?.[xi];
           return Number.isFinite(value) ? Number(value) : null;
         };
 
-        const sampleSoi = (rpm: number, iq: number, durationRow: number, durationCol: number): number | null => {
-          if (soiValues?.length && soiValues[0]?.length && soiX.length && soiY.length) {
-            const x = sXKind === "rpm" ? rpm : sXKind === "iq" ? iq : rpm;
-            const y = sYKind === "rpm" ? rpm : sYKind === "iq" ? iq : iq;
-            return sampleNearest(soiValues, soiX, soiY, x, y);
-          }
+        let soiValues: number[][] | null = null;
+        let soiX: number[] = [];
+        let soiY: number[] = [];
+        let sXKind: "rpm" | "iq" | "other" = "other";
+        let sYKind: "rpm" | "iq" | "other" = "other";
 
-          // Fallback avant le premier snapshot SOI :
-          // on lit directement la map source avec la même correspondance
-          // d'indices que la version ATDC qui fonctionnait auparavant.
-          if (atdcSoiMap && soiLayout) {
-            const sourceRows = durationValues.length;
-            const sourceCols = durationValues[0]?.length ?? 0;
-            const soiRow = sourceRows > 1 && soiLayout.rows > 1
-              ? Math.round(durationRow * (soiLayout.rows - 1) / (sourceRows - 1))
-              : 0;
-            const soiCol = sourceCols > 1 && soiLayout.cols > 1
-              ? Math.round(durationCol * (soiLayout.cols - 1) / (sourceCols - 1))
-              : 0;
-            return readCorrectedSourceCell(
-              atdcSoiMap as typeof mapData,
-              atdcSoiMap.address,
-              soiRow,
-              soiCol,
-              soiLayout,
-            );
+        if (soiSource) {
+          const soiLayoutLocal = resolveMapCellLayout(soiSource);
+          const soiAxes = resolveAxisSources(soiSource);
+          const readAxis = (address: number, count: number, correction: number, offsetValue: number) => {
+            if (!address || count <= 0) return [] as number[];
+            const out: number[] = [];
+            const big = isBigEndianEcu(ecuType);
+            for (let i = 0; i < count; i++) {
+              const off = address + i * 2;
+              if (off + 1 >= fileData.length) break;
+              let raw = big ? ((fileData[off] << 8) | fileData[off + 1]) : (fileData[off] | (fileData[off + 1] << 8));
+              if (raw > 32767 && !hasUnsignedAxes(ecuType)) raw -= 65536;
+              out.push(raw * correction + offsetValue);
+            }
+            return out;
+          };
+          soiX = readAxis(soiAxes.x.address, soiLayoutLocal.cols, soiAxes.x.correction, soiAxes.x.offset);
+          soiY = readAxis(soiAxes.y.address, soiLayoutLocal.rows, soiAxes.y.correction, soiAxes.y.offset);
+          if (soiX.length !== soiLayoutLocal.cols && Array.isArray(soiSource.x_axis_values)) soiX = soiSource.x_axis_values.map(Number).filter(Number.isFinite);
+          if (soiY.length !== soiLayoutLocal.rows && Array.isArray(soiSource.y_axis_values)) soiY = soiSource.y_axis_values.map(Number).filter(Number.isFinite);
+
+          const soiLabels = resolveAxisLabels(soiSource);
+          sXKind = axisKind(soiLabels.xLabel, soiX.map(String));
+          sYKind = axisKind(soiLabels.yLabel, soiY.map(String));
+
+          if (soiX.length === soiLayoutLocal.cols && soiY.length === soiLayoutLocal.rows) {
+            soiValues = Array.from({ length: soiLayoutLocal.rows }, (_, row) =>
+              Array.from({ length: soiLayoutLocal.cols }, (_, col) =>
+                readCorrectedSourceCell(soiSource as typeof mapData, soiSource.address, row, col, soiLayoutLocal),
+              ),
+            ).map(row => row.map(v => Number.isFinite(v) ? Number(v) : 0));
           }
-          return null;
+        }
+
+        const getSoi = (rpm: number, iq: number): number | null => {
+          if (!soiValues?.length || !soiX.length || !soiY.length) return null;
+          const xTarget = sXKind === "rpm" ? rpm : sXKind === "iq" ? iq : rpm;
+          const yTarget = sYKind === "rpm" ? rpm : sYKind === "iq" ? iq : iq;
+          const xi = nearestIndex(soiX, xTarget);
+          const yi = nearestIndex(soiY, yTarget);
+          if (xi < 0 || yi < 0) return null;
+          const value = soiValues[yi]?.[xi];
+          return Number.isFinite(value) ? Number(value) : null;
         };
 
-        // Grille finale : Y = RPM, X = IQ.
-        const liveAtdc = rpmAxis.map((rpmText) => {
+        // Grille finale fixe : X = IQ, Y = RPM.
+        const liveAtdc = rpmAxis.map(rpmText => {
           const rpm = Number.parseFloat(String(rpmText));
-          return iqAxis.map((iqText) => {
+          return iqAxis.map(iqText => {
             const iq = Number.parseFloat(String(iqText));
-            const durationRow = dYKind === "rpm"
-              ? nearestIndex(durationNumsY, rpm)
-              : nearestIndex(durationNumsY, iq);
-            const durationCol = dXKind === "rpm"
-              ? nearestIndex(durationNumsX, rpm)
-              : nearestIndex(durationNumsX, iq);
-            const ti = sampleDuration(rpm, iq);
+            const ti = getDuration(rpm, iq);
             if (!Number.isFinite(ti)) return 0;
-
-            const soi = sampleSoi(rpm, iq, durationRow, durationCol);
-            return Number.isFinite(soi)
-              ? Number(ti) - Number(soi)
-              : Number(ti);
+            const soi = getSoi(rpm, iq);
+            return Number.isFinite(soi) ? Number(ti) - Number(soi) : Number(ti);
           });
         });
 
@@ -3476,11 +3420,12 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         xLabels.splice(0, xLabels.length, ...iqAxis);
         yLabels.splice(0, yLabels.length, ...rpmAxis);
         needsAxisSwap = false;
+        rowsReversedCount = 0;
+        xLabelsWereReversed = false;
         rowsReversed = false;
         colsReversed = false;
       }
     }
-
     // Mettre en cache les résultats
     const cacheData: CachedMapData = {
       mapValues: values,
@@ -3513,7 +3458,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       xAxisIsIndex,
       yAxisIsIndex,
     };
-  }, [mapData, fileData, projectName, fileName, displaySettings, liveSnapshotVersion, liveMapSnapshots]);
+  }, [mapData, fileData, projectName, fileName, displaySettings]);
 
   // Reset data when map changes to prevent showing stale data
   useEffect(() => {

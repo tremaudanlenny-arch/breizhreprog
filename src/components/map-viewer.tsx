@@ -24,7 +24,7 @@ type ViewMode = "text" | "2d" | "3d";
 
 // Cache pour mémoriser les données extraites de chaque map (par adresse)
 // Ce cache évite de recalculer les données à chaque changement de map
-const CACHE_VERSION = "2026-10-breizhreprog-atdc-v3-physical-axes";
+const CACHE_VERSION = "2026-10-breizhreprog-atdc-v4-display-snapshots";
 
 // Map globale pour sauvegarder les positions de caméra de chaque map 3D
 // Persiste entre les montages/démontages du composant
@@ -3293,33 +3293,27 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     let colsReversed = xLabelsWereReversed;
      
 
-    // ATDC live : on reconstruit directement une grille PHYSIQUE
-    // RPM x IQ. Les 2 maps sources n'ont pas forcément la même orientation
-    // (Duration = RPM x IQ, SOI = IQ x RPM). On ne fait donc plus de
-    // correspondance cellule-à-cellule par indices : on interroge chaque map
-    // sur les mêmes coordonnées physiques RPM/IQ.
+    // ATDC live : travailler sur les snapshots D'AFFICHAGE des maps sources.
+    // Le snapshot display garantit que valeurs et axes ont déjà la même
+    // orientation que celle visible dans l'éditeur. On ne réutilise donc pas
+    // les sourceMapValues « fichier » qui peuvent avoir une orientation
+    // différente (c'est ce qui mélangeait les axes de l'ATDC).
     if (isAtdcVirtual && liveMapSnapshots) {
       const durationSnapshot = liveMapSnapshots.get(sourceMapAddress);
       const soiSnapshot = atdcSoiMap ? liveMapSnapshots.get(atdcSoiMap.address) : undefined;
-      const durationValues = durationSnapshot?.sourceMapValues ?? durationSnapshot?.mapValues;
-      const soiValues = soiSnapshot?.sourceMapValues ?? soiSnapshot?.mapValues;
-      const durationX = durationSnapshot?.sourceXAxisLabels ?? durationSnapshot?.xAxisLabels ?? [];
-      const durationY = durationSnapshot?.sourceYAxisLabels ?? durationSnapshot?.yAxisLabels ?? [];
-      const soiX = soiSnapshot?.sourceXAxisLabels ?? soiSnapshot?.xAxisLabels ?? [];
-      const soiY = soiSnapshot?.sourceYAxisLabels ?? soiSnapshot?.yAxisLabels ?? [];
+      const durationValues = durationSnapshot?.mapValues;
+      const soiValues = soiSnapshot?.mapValues;
+      const durationX = durationSnapshot?.xAxisLabels ?? [];
+      const durationY = durationSnapshot?.yAxisLabels ?? [];
+      const soiX = soiSnapshot?.xAxisLabels ?? [];
+      const soiY = soiSnapshot?.yAxisLabels ?? [];
 
       const numericAxis = (axis: string[]) => axis.map((v) => Number.parseFloat(String(v)));
-      const axisKind = (
-        axisLabel: string | undefined,
-        labels: string[],
-        explicitValues?: number[] | null,
-      ): "rpm" | "iq" | "other" => {
+      const axisKind = (axisLabel: string | undefined, labels: string[]): "rpm" | "iq" | "other" => {
         const text = String(axisLabel || "").toLowerCase();
         if (text.includes("rpm") || text.includes("engine speed")) return "rpm";
         if (text.includes("iq") || text.includes("mg/st") || text.includes("mg/stroke")) return "iq";
-        const values = (explicitValues?.length ? explicitValues : labels)
-          .map((v) => Number.parseFloat(String(v)))
-          .filter(Number.isFinite);
+        const values = numericAxis(labels).filter(Number.isFinite);
         if (values.length >= 2) {
           const min = Math.min(...values);
           const max = Math.max(...values);
@@ -3339,10 +3333,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         else if (target >= work[work.length - 1]) j = work.length - 2;
         else {
           for (let i = 0; i < work.length - 1; i++) {
-            if (target >= work[i] && target <= work[i + 1]) {
-              j = i;
-              break;
-            }
+            if (target >= work[i] && target <= work[i + 1]) { j = i; break; }
           }
         }
         const a = work[j];
@@ -3353,28 +3344,26 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
           : { i0: axis.length - 1 - j, i1: axis.length - 1 - (j + 1), t };
       };
 
-      const sample2d = (
-        matrix: number[][],
-        xAxis: number[],
-        yAxis: number[],
-        x: number,
-        y: number,
-      ): number | null => {
+      const sample2d = (matrix: number[][], xAxis: number[], yAxis: number[], x: number, y: number): number | null => {
         if (!matrix.length || !matrix[0]?.length) return null;
         const rows = matrix.length;
         const cols = matrix[0].length;
+        const x = numericAxis(xAxis);
+        const yy = numericAxis(yAxis);
         if (rows === 1 || cols === 1) {
           const oneD = rows === 1 ? matrix[0] : matrix.map((row) => row[0]);
-          const axis = rows === 1 ? xAxis : yAxis;
-          const target = rows === 1 ? x : y;
-          const b = findBracket(numericAxis(axis), target);
-          if (!b) return Number.isFinite(oneD[0]) ? oneD[0] : null;
-          const a0 = oneD[b.i0] ?? oneD[0];
-          const a1 = oneD[b.i1] ?? a0;
-          return a0 + (a1 - a0) * b.t;
+          const axis = rows === 1 ? x : yy;
+          const target = rows === 1 ? x : yy;
+          const targetValue = rows === 1 ? xAxis.length ? xAxis.length : target : y;
+          void targetValue;
+          const br = findBracket(axis, rows === 1 ? x : y);
+          if (!br) return Number.isFinite(oneD[0]) ? oneD[0] : null;
+          const a = oneD[br.i0] ?? oneD[0];
+          const b = oneD[br.i1] ?? a;
+          return a + (b - a) * br.t;
         }
-        const xb = findBracket(numericAxis(xAxis), x);
-        const yb = findBracket(numericAxis(yAxis), y);
+        const xb = findBracket(x, x);
+        const yb = findBracket(yy, y);
         if (!xb || !yb) return null;
         const q11 = matrix[yb.i0]?.[xb.i0];
         const q21 = matrix[yb.i0]?.[xb.i1];
@@ -3386,62 +3375,34 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         return a + (b - a) * yb.t;
       };
 
-      const durationXKind = axisKind(
-        mapData.atdc_source_duration_map?.x_label ?? durationSnapshot?.xAxisLabel,
-        durationX,
-        mapData.atdc_source_duration_map?.x_axis_values,
-      );
-      const durationYKind = axisKind(
-        mapData.atdc_source_duration_map?.y_label ?? durationSnapshot?.yAxisLabel,
-        durationY,
-        mapData.atdc_source_duration_map?.y_axis_values,
-      );
-      const soiXKind = axisKind(
-        mapData.atdc_source_soi_map?.x_label ?? soiSnapshot?.xAxisLabel,
-        soiX,
-        mapData.atdc_source_soi_map?.x_axis_values,
-      );
-      const soiYKind = axisKind(
-        mapData.atdc_source_soi_map?.y_label ?? soiSnapshot?.yAxisLabel,
-        soiY,
-        mapData.atdc_source_soi_map?.y_axis_values,
-      );
+      const durationXKind = axisKind(durationSnapshot?.xAxisLabel, durationX);
+      const durationYKind = axisKind(durationSnapshot?.yAxisLabel, durationY);
+      const soiXKind = axisKind(soiSnapshot?.xAxisLabel, soiX);
+      const soiYKind = axisKind(soiSnapshot?.yAxisLabel, soiY);
 
-      const rpmAxis = durationXKind === "rpm" ? durationX : durationY;
-      const iqAxis = durationXKind === "iq" ? durationX : durationY;
+      if (durationValues?.length && durationValues[0]?.length) {
+        const liveAtdc = durationValues.map((row, r) => row.map((durationValue, c) => {
+          const xValue = Number.parseFloat(String(durationX[c] ?? ""));
+          const yValue = Number.parseFloat(String(durationY[r] ?? ""));
+          if (!Number.isFinite(durationValue) || !Number.isFinite(xValue) || !Number.isFinite(yValue)) return 0;
+          const rpm = durationXKind === "rpm" ? xValue : durationYKind === "rpm" ? yValue : xValue;
+          const iq = durationXKind === "iq" ? xValue : durationYKind === "iq" ? yValue : yValue;
 
-      if (durationValues?.length && durationValues[0]?.length && rpmAxis.length && iqAxis.length) {
-        const durationQuery = (rpm: number, iq: number) => {
-          const x = durationXKind === "rpm" ? rpm : iq;
-          const y = durationYKind === "rpm" ? rpm : iq;
-          return sample2d(durationValues, numericAxis(durationX), numericAxis(durationY), x, y);
-        };
-        const soiQuery = (rpm: number, iq: number) => {
-          if (!soiValues?.length || !soiValues[0]?.length || !soiX.length || !soiY.length) return null;
-          const x = soiXKind === "rpm" ? rpm : soiXKind === "iq" ? iq : rpm;
-          const y = soiYKind === "rpm" ? rpm : soiYKind === "iq" ? iq : iq;
-          return sample2d(soiValues, numericAxis(soiX), numericAxis(soiY), x, y);
-        };
+          let soiValue: number | null = null;
+          if (soiValues?.length && soiValues[0]?.length && soiX.length && soiY.length) {
+            const soiQueryX = soiXKind === "rpm" ? rpm : soiXKind === "iq" ? iq : rpm;
+            const soiQueryY = soiYKind === "rpm" ? rpm : soiYKind === "iq" ? iq : iq;
+            soiValue = sample2d(soiValues, numericAxis(soiX), numericAxis(soiY), soiQueryX, soiQueryY);
+          }
+          return soiValue == null || !Number.isFinite(soiValue)
+            ? Number(durationValue)
+            : Number(durationValue) - Number(soiValue);
+        }));
 
-        // Convention ATDC utilisée dans l'éditeur : SOI positif = avant PMH.
-        // Fin d'injection = durée - SOI. Une valeur négative signifie que
-        // l'injection se termine encore avant le PMH, une valeur positive après.
-        const liveAtdc = rpmAxis.map((rpmLabel) => {
-          const rpm = Number.parseFloat(String(rpmLabel));
-          return iqAxis.map((iqLabel) => {
-            const iq = Number.parseFloat(String(iqLabel));
-            const durationValue = durationQuery(rpm, iq);
-            const soiValue = soiQuery(rpm, iq);
-            if (!Number.isFinite(durationValue)) return 0;
-            return Number.isFinite(soiValue) ? Number(durationValue) - Number(soiValue) : Number(durationValue);
-          });
-        });
-
-        // Grille finale explicite : Y = RPM, X = IQ.
+        // Même grille, mêmes axes que Duration : aucune transposition artificielle.
         values.splice(0, values.length, ...liveAtdc);
-        xLabels.splice(0, xLabels.length, ...iqAxis);
-        yLabels.splice(0, yLabels.length, ...rpmAxis);
-        // Les valeurs sont déjà dans l'orientation d'affichage finale.
+        xLabels.splice(0, xLabels.length, ...durationX);
+        yLabels.splice(0, yLabels.length, ...durationY);
         needsAxisSwap = false;
         rowsReversed = false;
         colsReversed = false;

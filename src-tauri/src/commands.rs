@@ -163,9 +163,6 @@ pub fn import_map_definitions(
     // Les .vtkp de VAGTuner et les mappacks JSON décrivent la même chose :
     // on garde la provenance dans external_source pour que l'éditeur affiche
     // un mappack distinct et que l'export puisse le distinguer.
-    for map in &mut maps.clone() {
-        let _ = map;
-    }
     let mut maps = maps;
     for map in &mut maps {
         map.external_source = Some(format.clone());

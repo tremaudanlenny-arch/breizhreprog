@@ -7658,10 +7658,10 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                 style={{ boxShadow: "0 0 18px rgba(139,92,246,0.32), 0 0 42px rgba(217,70,239,0.18)" }}
               />
               <img
-                src="/breizh-reprog-logo.svg"
+                src="/breizh-header-logo.webp"
                 alt="Breizh Reprog X Ninnin Projet Perf"
                 data-tauri-drag-region
-                className="relative block w-full max-w-[340px] h-auto object-contain drop-shadow-[0_0_28px_rgba(168,85,247,0.9)] transition-transform duration-500 hover:scale-[1.02]"
+                className="relative block w-full max-w-[340px] h-auto object-contain drop-shadow-[0_0_30px_rgba(168,85,247,0.95)] transition-transform duration-500 hover:scale-[1.02]"
               />
             </div>
           </div>

@@ -1829,13 +1829,18 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
 
   const handlePlot3DClick = (event: any) => {
     if (!mapping3DMode || isAtdcVirtual) return;
-    const cell = get3DDisplayCell(event);
-    if (!cell) return;
+    const point = event?.points?.find((p: any) => Array.isArray(p?.customdata));
+    const cell = point?.customdata ? {
+      row: Number(point.customdata[0]),
+      col: Number(point.customdata[1]),
+    } : get3DDisplayCell(event);
+    if (!cell || !Number.isFinite(cell.row) || !Number.isFinite(cell.col)) return;
 
     const mapped = toMapCoords(cell.row, cell.col);
     const key = getCellKey(mapped.row, mapped.col);
     keyboardCursorRef.current = { row: cell.row, col: cell.col };
     setSelected3DCell(cell);
+    setHovered3DCell(cell);
     setSelectedXAxisCells(new Set());
     setSelectedYAxisCells(new Set());
     setSelectedCells(new Set([key]));
@@ -4490,7 +4495,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         pointZ.push(displayMapValues[row][col]);
         pointCustomData.push([row, col]);
         // Points volontairement plus gros pour rester attrapables, surtout après zoom.
-        pointSizes.push(selected3DCell?.row === row && selected3DCell?.col === col ? 13 : 9);
+        pointSizes.push(selected3DCell?.row === row && selected3DCell?.col === col ? 18 : 14);
       }
     }
 
@@ -4506,9 +4511,10 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         marker: {
           size: pointSizes,
           color: "#ffffff",
-          opacity: 0.92,
+          opacity: 0.96,
           line: { color: "#7c3aed", width: 2 },
         },
+        hoverinfo: "text" as const,
         hovertemplate: "Cellule %{customdata[0]}×%{customdata[1]}<br>Valeur: %{z:.2f}<extra></extra>",
         showlegend: false,
       },
@@ -4564,6 +4570,18 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     });
   };
 
+  const publishedSnapshotRef = useRef<string | null>(null);
+  const snapshotSignature = useMemo(() => {
+    const rows = displayMapValues.map((row) => row.join(",")).join(";");
+    return [
+      mapData.address,
+      isAtdcVirtual ? "atdc" : "map",
+      displayXAxisLabels.join("|"),
+      displayYAxisLabels.join("|"),
+      rows,
+    ].join("§");
+  }, [mapData.address, isAtdcVirtual, displayXAxisLabels, displayYAxisLabels, displayMapValues]);
+
   // Étiquettes d'axes (indices → vraies valeurs) pour les deux layouts 3D
   const plot3DTicks = useMemo(
     () => buildPlot3DTicks(displayXAxisLabels, displayYAxisLabels),
@@ -4576,6 +4594,11 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
   // masquer une modification de cellule.
   useEffect(() => {
     if (!onPlot3DDataChange) return;
+    // Le tableau et les axes sont recréés à chaque render. Ne republie pas
+    // systématiquement le snapshot, sinon le parent incrémente la révision live,
+    // rerend les maps, puis ce même effet repart en boucle.
+    if (publishedSnapshotRef.current === snapshotSignature) return;
+    publishedSnapshotRef.current = snapshotSignature;
     onPlot3DDataChange(mapData.address, {
       plot3DData,
       xAxisLabels: [...displayXAxisLabels],
@@ -4601,6 +4624,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     displayYAxisLabels,
     displayMapValues,
     isAtdcVirtual,
+    snapshotSignature,
   ]);
 
   if (headless) {

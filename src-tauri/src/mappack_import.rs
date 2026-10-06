@@ -170,14 +170,18 @@ fn to_map(obj: &Value, rom_len: u32) -> Option<DetectedMap> {
 
     let org = text_of(obj, "DataOrg")
         .or_else(|| text_of(obj, "data_org"))
-        .or_else(|| text_of(obj, "Lecture").map(|s| {
-            match s.trim() {
+        .or_else(|| {
+            let lecture = text_of(obj, "Lecture").unwrap_or_else(|| "16".to_string());
+            let endianness = text_of(obj, "Endianness").unwrap_or_else(|| "LE".to_string());
+            let little = endianness.eq_ignore_ascii_case("LE") || endianness.eq_ignore_ascii_case("LoHi");
+            Some(match lecture.trim() {
                 "8" => "eByte".to_string(),
-                "16" => "eLoHi".to_string(),
-                "32" => "eLoHiLoHi".to_string(),
-                _ => "eLoHi".to_string(),
-            }
-        }))
+                "32" if little => "eLoHiLoHi".to_string(),
+                "32" => "eHiLoHiLo".to_string(),
+                _ if little => "eLoHi".to_string(),
+                _ => "eHiLo".to_string(),
+            })
+        })
         .unwrap_or_else(|| "eLoHi".to_string());
     let (cell, little_endian, is_float) = data_org(&org)?;
     let signed = flag_of(obj, "bSigned") || flag_of(obj, "signed");

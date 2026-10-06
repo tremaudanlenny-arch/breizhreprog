@@ -689,7 +689,7 @@ export function MapViewer({
   const isAtdcVirtual = mapData.map_type === "atdc_virtual";
   // Une carte ATDC est recalculée quand une map Duration/SOI publie un nouveau
   // snapshot. Les maps normales restent sur 0 pour ne pas invalider leur cache.
-  const atdcLiveSnapshotRevision = isAtdcVirtual ? liveSnapshotVersion : 0;
+  const atdcLiveSnapshotRevision = 0;
   const atdcSoi = mapData.atdc_soi_default ?? 90;
   const [atdcRenderOpen, setAtdcRenderOpen] = useState(false);
   const [atdcThreshold, setAtdcThreshold] = useState(0);
@@ -2458,7 +2458,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
     const atdcSoiMap = isAtdcVirtual ? mapData.atdc_source_soi_map : undefined;
     const atdcSoiAddress = atdcSoiMap?.address ?? 0;
     const cacheKey = getCacheKey(mapData.address, projectName, fileName)
-      + (isAtdcVirtual ? `_soi_${atdcSoiAddress}_live_${atdcLiveSnapshotRevision}` : "");
+      + (isAtdcVirtual ? `_soi_${atdcSoiAddress}` : "");
     const fileDataHash = getFileDataHash(fileData, sourceMapAddress) + (isAtdcVirtual ? "_soi_" + getFileDataHash(fileData, atdcSoiAddress) : "");
     const cached = mapDataCache.get(cacheKey);
 

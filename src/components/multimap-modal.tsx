@@ -34,20 +34,30 @@ export function MultimapModal({
   const border = light ? "rgba(15,20,35,.12)" : "rgba(255,255,255,.10)";
   const key = "breizhreprog-multimap-slots:" + projectKey;
 
-  const [slots, setSlots] = React.useState<(string | null)[]>(() => {
+  const [slots, setSlots] = React.useState<(string | null)[]>(
+    Array.from({ length: SLOT_COUNT }, () => null)
+  );
+
+  React.useEffect(() => {
     try {
       const raw = localStorage.getItem(key);
       const parsed = raw ? JSON.parse(raw) : [];
-      return Array.from({ length: SLOT_COUNT }, (_, i) =>
-        typeof parsed?.[i] === "string" ? parsed[i] : null
+      setSlots(
+        Array.from({ length: SLOT_COUNT }, (_, i) =>
+          typeof parsed?.[i] === "string" ? parsed[i] : null
+        )
       );
     } catch {
-      return Array.from({ length: SLOT_COUNT }, () => null);
+      // Keep empty slots when localStorage is unavailable.
     }
-  });
+  }, [key]);
 
   React.useEffect(() => {
-    localStorage.setItem(key, JSON.stringify(slots));
+    try {
+      localStorage.setItem(key, JSON.stringify(slots));
+    } catch {
+      // localStorage can be disabled in some environments.
+    }
   }, [key, slots]);
 
   const setSlot = (index: number, versionId: string) => {

@@ -6498,7 +6498,10 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   // ses axes vers mapPlot3DDataRef même quand la map est fermée.
   const liveCalibrationMaps = useMemo(() => {
     const seen = new Set<number>();
-    return [...atdcSourceMaps, ...atdcSoiMaps, ...mafMaps].filter((map) => {
+    const mapsForLiveEngine = calibrationMathTool === "afr"
+      ? [...atdcSourceMaps, ...atdcSoiMaps, ...mafMaps]
+      : [...atdcSourceMaps, ...atdcSoiMaps];
+    return mapsForLiveEngine.filter((map) => {
       if (seen.has(map.address)) return false;
       seen.add(map.address);
       return true;
@@ -8745,6 +8748,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                           };
                         })()}
                         ecuType={projectData?.ecu_type}
+                        headless
                       />
                     </div>
                   );

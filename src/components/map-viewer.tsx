@@ -4495,7 +4495,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
         pointZ.push(displayMapValues[row][col]);
         pointCustomData.push([row, col]);
         // Points volontairement plus gros pour rester attrapables, surtout après zoom.
-        pointSizes.push(selected3DCell?.row === row && selected3DCell?.col === col ? 18 : 14);
+        pointSizes.push(selected3DCell?.row === row && selected3DCell?.col === col ? 26 : 20);
       }
     }
 

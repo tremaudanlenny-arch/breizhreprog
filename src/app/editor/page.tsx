@@ -6963,9 +6963,23 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     mapName: string;
     canShow3D: boolean;
   }) => {
-    // Fenêtres visibles = Preview uniquement. Elles ne font plus avancer la
-    // révision live ATDC : ouvrir Duration/SOI ne peut donc plus boucler.
     mapPlot3DDataRef.current.set(mapAddress, data);
+
+    // Une map visible est la source live lorsque l'utilisateur l'a ouverte.
+    // On ne bump la révision ATDC que pour Duration/SOI réellement utilisées.
+    if (!data.isAtdcVirtual) {
+      const atdcMap = openMapsRef.current.find((map) => map.map_type === "atdc_virtual");
+      if (
+        atdcMap &&
+        (
+          mapAddress === atdcMap.atdc_source_duration_address ||
+          mapAddress === atdcMap.atdc_source_soi_map?.address
+        )
+      ) {
+        setMapSnapshotVersion((version) => version + 1);
+      }
+    }
+
     if (activeMapAddressRef.current === mapAddress && showPreviewWindowRef.current) {
       setPreviewDataVersion(prev => prev + 1);
     }
@@ -6987,11 +7001,14 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   }) => {
     mapPlot3DDataRef.current.set(mapAddress, data);
     if (data.isAtdcVirtual) return;
+
     const atdcMap = openMapsRef.current.find((map) => map.map_type === "atdc_virtual");
-    if (!atdcMap) return;
     if (
-      mapAddress === atdcMap.atdc_source_duration_address ||
-      mapAddress === atdcMap.atdc_source_soi_map?.address
+      atdcMap &&
+      (
+        mapAddress === atdcMap.atdc_source_duration_address ||
+        mapAddress === atdcMap.atdc_source_soi_map?.address
+      )
     ) {
       setMapSnapshotVersion((version) => version + 1);
     }
@@ -8727,6 +8744,8 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               >
                 {liveCalibrationMaps.map((liveMap) => {
                   const liveMapModifications = allMapModifications.get(liveMap.address);
+                  const visibleAlready = openMaps.some((open) => open.address === liveMap.address);
+                  if (visibleAlready) return null;
                   const livePersistedAxes = mapAxisLabels.get(liveMap.address);
                   const liveSettings = mapDisplaySettingsStore.get(liveMap.address);
                   return (

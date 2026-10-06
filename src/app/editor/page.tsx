@@ -7646,22 +7646,22 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               plateformes : même interface partout (demande du 09/09). Sur
               macOS cela le garde aussi à droite des feux de la fenêtre, à
               tous les zooms. */}
-          <div data-tauri-drag-region className="mb-4 flex items-center justify-start pl-1">
-            <div data-tauri-drag-region className="relative inline-flex items-start rounded-2xl overflow-visible w-full max-w-[322px]">
+          <div data-tauri-drag-region className="mb-4 flex items-start justify-start pl-0 overflow-visible">
+            <div data-tauri-drag-region className="relative inline-flex items-start rounded-2xl overflow-visible w-[calc(100% + 18px)] max-w-none origin-left">
               <div
                 data-tauri-drag-region
-                className="absolute -inset-2 rounded-3xl bg-gradient-to-r from-violet-600/30 via-fuchsia-500/25 to-cyan-400/25 blur-2xl animate-pulse"
+                className="absolute -inset-3 rounded-3xl bg-gradient-to-r from-violet-600/30 via-fuchsia-500/25 to-cyan-400/25 blur-2xl animate-pulse pointer-events-none"
               />
               <div
                 data-tauri-drag-region
-                className="absolute -inset-1 rounded-2xl border border-violet-400/25"
-                style={{ boxShadow: "0 0 18px rgba(139,92,246,0.32), 0 0 42px rgba(217,70,239,0.18)" }}
+                className="absolute -inset-2 rounded-2xl border border-violet-400/25 pointer-events-none"
+                style={{ boxShadow: "0 0 20px rgba(139,92,246,0.34), 0 0 48px rgba(217,70,239,0.20)" }}
               />
               <img
                 src="/breizh-reprog-logo.svg"
                 alt="Breizh Reprog X Ninnin Projet Perf"
                 data-tauri-drag-region
-                className="relative block w-[420px] max-w-none h-auto object-contain drop-shadow-[0_0_30px_rgba(168,85,247,0.98)] transition-transform duration-300 hover:scale-[1.015]"
+                className="relative block w-full max-w-none h-auto object-contain scale-[1.16] origin-left drop-shadow-[0_0_34px_rgba(168,85,247,0.98)] transition-transform duration-300 hover:scale-[1.19]"
               />
             </div>
           </div>

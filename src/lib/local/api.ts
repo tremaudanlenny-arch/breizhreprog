@@ -19,6 +19,11 @@ import { type MappackDisplaySettings,
   mappackFileName,
   type ExportMapData,
 } from "@/lib/mappack-export";
+import {
+  buildVagtunerMappack,
+  serializeVagtunerMappack,
+  vagtunerMappackFileName,
+} from "@/lib/mappack-vtkp";
 
 export interface LocalApiResult {
   status: number;
@@ -452,6 +457,28 @@ export async function handleLocalApi(
         fileRecord.map_display_settings && typeof fileRecord.map_display_settings === "object"
           ? (fileRecord.map_display_settings as Record<string, MappackDisplaySettings>)
           : undefined;
+      const format = String(body?.format || "json").toLowerCase();
+      const baseName = fileRecord.project_name || fileRecord.file_name || "project";
+
+      if (format === "vtkp") {
+        const pack = buildVagtunerMappack(exportMaps, fileRecord.ecu_type || "", sortMode);
+        const bytes = serializeVagtunerMappack(pack);
+        const fileName = vagtunerMappackFileName(
+          want === "detector" ? baseName : (baseName + " " + want.toUpperCase())
+        );
+        return {
+          status: 200,
+          body: bytes,
+          headers: {
+            "Content-Type": "application/json; charset=utf-8",
+            "X-Mappack-Filename": encodeURIComponent(fileName),
+            "X-Credits-Remaining": "0",
+            "X-Maps-Count": String(pack.MapCount),
+            "X-Mappack-Format": "VTKP",
+          },
+        };
+      }
+
       const pack = buildWinolsMappack(
         exportMaps,
         fileRecord.ecu_type || "",
@@ -459,11 +486,8 @@ export async function handleLocalApi(
         displaySettings
       );
       const bytes = serializeWinolsMappack(pack);
-      // Le nom porte le format quand les maps viennent d'un fichier de
-      // définitions : sans ça, deux mappacks du même projet s'écraseraient.
-      const baseName = fileRecord.project_name || fileRecord.file_name || "project";
       const fileName = mappackFileName(
-        want === "detector" ? baseName : `${baseName} ${want.toUpperCase()}`
+        want === "detector" ? baseName : (baseName + " " + want.toUpperCase())
       );
 
       return {
@@ -474,6 +498,7 @@ export async function handleLocalApi(
           "X-Mappack-Filename": encodeURIComponent(fileName),
           "X-Credits-Remaining": "0",
           "X-Maps-Count": String(pack.maps.length),
+          "X-Mappack-Format": "JSON",
         },
       };
     }

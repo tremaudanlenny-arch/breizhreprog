@@ -9063,6 +9063,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
           currentVersionId={currentVersionId}
           vehicleHint={vagtunerVehicleHint.label}
           vagtunerCandidates={vagtunerCandidates}
+          allVagtunerPacks={VAGTUNER_PACKS}
           onSelectVersion={(id) => { handleSelectVersion(id); setMultimapOpen(false); }}
           onImportVagtunerPack={(pack) => {
             setMultimapOpen(false);

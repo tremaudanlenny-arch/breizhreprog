@@ -8859,16 +8859,12 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               toast({ title: "ATDC", description: "Sélectionne une map Duration et une map Start of injection correspondante.", variant: "destructive" });
               return;
             }
-            const durationDims = source.dimensions?.TwoDimensional;
             const virtualMap: MapData = {
               ...source,
               name: "ATDC " + (source.name || "TI") + " - SOI " + atdcToolSoi + "°",
               address: 0xD0000000 + (source.address & 0x00FFFFFF),
               map_type: "atdc_virtual",
               virtual_readonly: true,
-              dimensions: durationDims
-                ? { TwoDimensional: { rows: durationDims.cols, cols: durationDims.rows } }
-                : source.dimensions,
               x_label: "Injection quantity (IQ)",
               y_label: "Engine speed (rpm)",
               atdc_source_duration_address: source.address,

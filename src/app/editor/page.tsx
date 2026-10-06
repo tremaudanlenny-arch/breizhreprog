@@ -7127,6 +7127,53 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     return packs;
   }, [projectData?.detectionResults?.maps, t.sidebar.mappack]);
 
+  const vagtunerVehicleHint = useMemo(
+    () => detectVagtunerVehicleHint({
+      project_name: projectData?.project_name,
+      file_name: projectData?.file_name,
+      original_name: projectData?.original_name,
+      vehicle_brand: projectData?.vehicle_brand,
+      vehicle_model: projectData?.vehicle_model,
+      engine_type: projectData?.engine_type,
+      ecu_type: projectData?.ecu_type,
+    }),
+    [
+      projectData?.project_name,
+      projectData?.file_name,
+      projectData?.original_name,
+      projectData?.vehicle_brand,
+      projectData?.vehicle_model,
+      projectData?.engine_type,
+      projectData?.ecu_type,
+    ],
+  );
+
+  const vagtunerCandidates = useMemo(
+    () => VAGTUNER_PACKS
+      .map((pack) => ({ pack, score: scoreVagtunerPack(pack, {
+        project_name: projectData?.project_name,
+        file_name: projectData?.file_name,
+        original_name: projectData?.original_name,
+        vehicle_brand: projectData?.vehicle_brand,
+        vehicle_model: projectData?.vehicle_model,
+        engine_type: projectData?.engine_type,
+        ecu_type: projectData?.ecu_type,
+      }) }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score),
+    [
+      projectData?.project_name,
+      projectData?.file_name,
+      projectData?.original_name,
+      projectData?.vehicle_brand,
+      projectData?.vehicle_model,
+      projectData?.engine_type,
+      projectData?.ecu_type,
+    ],
+  );
+
+
+
   const currentVersionName =
     versions.find((v) => v.id === currentVersionId)?.name ||
     (versions[0]?.name ?? "Ori");

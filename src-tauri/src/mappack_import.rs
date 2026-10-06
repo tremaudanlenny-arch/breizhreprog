@@ -269,26 +269,26 @@ fn to_map(obj: &Value, rom_len: u32) -> Option<DetectedMap> {
             })
             .filter(|a| *a > 0);
         let factor = number_of(obj, &format!("{prefix}.Factor"))
-            .or_else(|| number_of(obj, &format!("{alt}_correction"))
+            .or_else(|| number_of(obj, &format!("{alt}_correction")))
             .or_else(|| {
                 let key = if is_x { "FacteurX" } else { "FacteurY" };
                 number_of(obj, key)
-            }))
+            })
             .filter(|f| f.is_finite() && *f != 0.0)
             .unwrap_or(1.0);
         let off = number_of(obj, &format!("{prefix}.Offset"))
-            .or_else(|| number_of(obj, &format!("{alt}_offset"))
+            .or_else(|| number_of(obj, &format!("{alt}_offset")))
             .or_else(|| {
                 let key = if is_x { "OffsetX" } else { "OffsetY" };
                 number_of(obj, key)
-            }))
-            .filter(|f| f.is_finite() && *f != 0.0);
+            })
+            .filter(|f| f.is_finite());
         let label = text_of(obj, &format!("{prefix}.Name"))
-            .or_else(|| text_of(obj, &format!("{prefix}.Unit"))
+            .or_else(|| text_of(obj, &format!("{prefix}.Unit")))
             .or_else(|| {
                 let key = if is_x { "UniteX" } else { "UniteY" };
                 text_of(obj, key)
-            }))
+            })
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
         if is_x {
@@ -303,7 +303,6 @@ fn to_map(obj: &Value, rom_len: u32) -> Option<DetectedMap> {
             d.y_label = label;
         }
     }
-
     Some(d)
 }
 

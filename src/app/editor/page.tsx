@@ -96,6 +96,7 @@ import { CalibrationToolsModal } from "@/components/calibration-tools-modal";
 import { CalibrationMathToolModal, type CalibrationMathTool } from "@/components/calibration-math-tool-modal";
 import { PromptModal } from "@/components/prompt-modal";
 import { MultimapModal } from "@/components/multimap-modal";
+import { MappackManagerModal } from "@/components/mappack-manager-modal";
 import { correctChecksumByEcuType, isChecksumSupported, ChecksumResult } from "@/lib/ecu/bosch/checksums";
 import { disableDTC, enableDTC, detectDTCs, type DetectedDTC, type CodeblockInfo } from "@/lib/ecu/bosch/dtc";
 import { saveBytesToFile } from "@/lib/local/save-file";
@@ -6423,6 +6424,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
   const [multimapOpen, setMultimapOpen] = useState(false);
+  const [mappackManagerOpen, setMappackManagerOpen] = useState(false);
   const toolsMenuRef = useRef<HTMLDivElement | null>(null);
   const toolsMenuCollapsedRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -6591,6 +6593,17 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
               <span className="mt-1 block pl-6 text-[10px] opacity-50">{tool.detail}</span>
             </button>
           ))}
+        </div>
+        <div className="mt-2 pt-2 border-t" style={{ borderColor: getBorderColor() }}>
+          <button
+            type="button"
+            onClick={() => { setToolsMenuOpen(false); setMappackManagerOpen(true); }}
+            className="w-full text-left rounded-xl px-3 py-2.5 transition-colors hover:bg-white/10"
+            style={{ color: getTextColor() }}
+          >
+            <div className="text-sm font-semibold">Mappacks</div>
+            <div className="text-[10px] opacity-55">Importer / exporter JSON et VTKP</div>
+          </button>
         </div>
         <div className="mt-2 pt-2 border-t" style={{ borderColor: getBorderColor() }}>
           <button
@@ -7164,6 +7177,22 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         }, {} as Record<string, MapData[]>),
       }));
   })();
+
+  const mappackManagerPacks = useMemo(() => {
+    const maps = projectData?.detectionResults?.maps ?? [];
+    const counts = new Map<string, number>();
+    let detectorCount = 0;
+    for (const map of maps) {
+      const source = map.external_source || "detector";
+      if (source === "detector") detectorCount++;
+      else counts.set(source, (counts.get(source) || 0) + 1);
+    }
+    const packs = [{ source: "detector", label: t.sidebar.mappack, count: detectorCount }];
+    for (const [source, count] of Array.from(counts.entries()).sort(([a], [b]) => a.localeCompare(b))) {
+      packs.push({ source, label: t.sidebar.mappack + " " + source, count });
+    }
+    return packs;
+  }, [projectData?.detectionResults?.maps, t.sidebar.mappack]);
 
   const currentVersionName =
     versions.find((v) => v.id === currentVersionId)?.name ||
@@ -9027,6 +9056,19 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
             });
           }}
           onClose={() => setCalibrationMathTool(null)}
+        />
+      )}
+
+      {mappackManagerOpen && projectData && (
+        <MappackManagerModal
+          theme={theme}
+          packs={mappackManagerPacks}
+          onImport={() => definitionsInputRef.current?.click()}
+          onExport={(source) => {
+            setMappackManagerOpen(false);
+            handleExportMappack(source);
+          }}
+          onClose={() => setMappackManagerOpen(false)}
         />
       )}
 

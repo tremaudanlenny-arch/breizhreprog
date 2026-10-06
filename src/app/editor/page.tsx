@@ -5562,6 +5562,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   // le format du fichier de définitions dont il vient (« OLS », « XDF »,
   // « JSON »). Chaque racine de l'arbre exporte la sienne.
   const [mappackExportSource, setMappackExportSource] = useState<string>("detector");
+  const [mappackExportFormat, setMappackExportFormat] = useState<"json" | "vtkp">("json");
   const [isMappackExportComplete, setIsMappackExportComplete] = useState(false);
 
   // Toolbar button: validate then show the confirmation modal
@@ -5605,7 +5606,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
         method: "POST",
         headers: { "Content-Type": "application/json" },
         // sortMode : l'export reprend l'ordre courant de la liste des maps
-        body: JSON.stringify({ fileId: projectData.fileId, sortMode: mapSortMode, source: mappackExportSource }),
+        body: JSON.stringify({ fileId: projectData.fileId, sortMode: mapSortMode, source: mappackExportSource, format: mappackExportFormat }),
       });
 
       if (!response.ok) {
@@ -9701,6 +9702,8 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
           onClose={closeMappackExportModal}
           onConfirm={handleConfirmMappackExport}
           cost={mappackPrice}
+          format={mappackExportFormat}
+          onFormatChange={setMappackExportFormat}
           isClosing={isMappackExportModalClosing}
           isExporting={isExportingMappack}
           exportComplete={isMappackExportComplete}

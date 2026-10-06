@@ -6497,6 +6497,13 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
   // fenêtre Duration/SOI. MapViewer publie ainsi ses valeurs canoniques et
   // ses axes vers mapPlot3DDataRef même quand la map est fermée.
   const liveCalibrationMaps = useMemo(() => {
+    const liveCalibrationEnabled =
+      calibrationWorkspaceOpen ||
+      injectionCalculatorOpen ||
+      calibrationMathTool === "afr" ||
+      openMaps.some((map) => map.map_type === "atdc_virtual");
+    if (!liveCalibrationEnabled) return [];
+
     const seen = new Set<number>();
     const mapsForLiveEngine = calibrationMathTool === "afr"
       ? [...atdcSourceMaps, ...atdcSoiMaps, ...mafMaps]
@@ -6506,7 +6513,15 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
       seen.add(map.address);
       return true;
     });
-  }, [atdcSourceMaps, atdcSoiMaps, mafMaps]);
+  }, [
+    atdcSourceMaps,
+    atdcSoiMaps,
+    mafMaps,
+    calibrationWorkspaceOpen,
+    injectionCalculatorOpen,
+    calibrationMathTool,
+    openMaps,
+  ]);
 
 
   const renderToolsMenu = (placement: 'below' | 'side') => {
@@ -6948,23 +6963,40 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
     mapName: string;
     canShow3D: boolean;
   }) => {
+    // Fenêtres visibles = Preview uniquement. Elles ne font plus avancer la
+    // révision live ATDC : ouvrir Duration/SOI ne peut donc plus boucler.
     mapPlot3DDataRef.current.set(mapAddress, data);
-    // Une carte ATDC est une vue dérivée : elle ne doit pas incrémenter sa
-    // propre révision live, sinon elle se republie elle-même en boucle.
-    if (!data.isAtdcVirtual) {
-      const atdcMap = openMapsRef.current.find((map) => map.map_type === "atdc_virtual");
-      const isAtdcSource =
-        !!atdcMap &&
-        (mapAddress === atdcMap.atdc_source_duration_address ||
-          mapAddress === atdcMap.atdc_source_soi_map?.address);
-      if (isAtdcSource) {
-        setMapSnapshotVersion((version) => version + 1);
-      }
-    }
     if (activeMapAddressRef.current === mapAddress && showPreviewWindowRef.current) {
       setPreviewDataVersion(prev => prev + 1);
     }
   }, []);
+
+  const handleLivePlot3DDataChange = useCallback((mapAddress: number, data: {
+    plot3DData: any[];
+    xAxisLabels: string[];
+    yAxisLabels: string[];
+    mapValues: number[][];
+    sourceXAxisLabels: string[];
+    sourceYAxisLabels: string[];
+    sourceMapValues: number[][];
+    isAtdcVirtual?: boolean;
+    xAxisLabel: string;
+    yAxisLabel: string;
+    mapName: string;
+    canShow3D: boolean;
+  }) => {
+    mapPlot3DDataRef.current.set(mapAddress, data);
+    if (data.isAtdcVirtual) return;
+    const atdcMap = openMapsRef.current.find((map) => map.map_type === "atdc_virtual");
+    if (!atdcMap) return;
+    if (
+      mapAddress === atdcMap.atdc_source_duration_address ||
+      mapAddress === atdcMap.atdc_source_soi_map?.address
+    ) {
+      setMapSnapshotVersion((version) => version + 1);
+    }
+  }, []);
+
 
   // Group maps by category from backend
   // VCDS Diagnostic maps use subcategory for grouping
@@ -8697,12 +8729,6 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                   const liveMapModifications = allMapModifications.get(liveMap.address);
                   const livePersistedAxes = mapAxisLabels.get(liveMap.address);
                   const liveSettings = mapDisplaySettingsStore.get(liveMap.address);
-                  const visibleAlready = openMaps.some((open) => open.address === liveMap.address);
-
-                  // Une fenêtre visible possède déjà son propre moteur live.
-                  // Le moteur invisible ne double donc pas les snapshots ouverts.
-                  if (visibleAlready) return null;
-
                   return (
                     <div key={`live-calibration-${liveMap.address}`} style={{ width: 2, height: 2 }}>
                       <MapViewer
@@ -8718,7 +8744,7 @@ await axios.put("/api/versioning/map-edits", { versionId: currentVersionId, edit
                         initialXAxisLabels={livePersistedAxes?.x}
                         initialYAxisLabels={livePersistedAxes?.y}
                         theme={theme}
-                        onPlot3DDataChange={handlePlot3DDataChange}
+                        onPlot3DDataChange={handleLivePlot3DDataChange}
                         liveMapSnapshots={mapPlot3DDataRef.current}
                         liveSnapshotVersion={mapSnapshotVersion}
                         allMaps={projectData.detectionResults.maps}

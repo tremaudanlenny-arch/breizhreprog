@@ -417,6 +417,27 @@ mod tests {
     }
 
     #[test]
+    fn reads_vagtuner_vtkp_shape() {
+        let json = r#"{"Version":"1.0","MapCount":1,"Maps":[
+          {"Nom":"Temps injection 1","Description":"TI","Unite":"us","Taille":"15 x 16",
+           "Adresse":"75BEA","Facteur":"1","Offset":"0",
+           "AdresseX":"75BAA","FacteurX":"1","OffsetX":"0","UniteX":"RPM",
+           "AdresseY":"0","FacteurY":"0.01","OffsetY":"0","UniteY":"IQ",
+           "Endianness":"LE","Lecture":16}
+        ]}"#;
+        let maps = parse_mappack(json, 0x100000).unwrap();
+        assert_eq!(maps.len(), 1);
+        let m = &maps[0];
+        assert_eq!(m.name.as_deref(), Some("Temps injection 1"));
+        assert_eq!(m.address, 0x75BEA);
+        assert!(matches!(m.dimensions, MapDimensions::TwoDimensional { rows: 16, cols: 15 }));
+        assert_eq!(m.x_axis_address, Some(0x75BAA));
+        assert_eq!(m.x_label.as_deref(), Some("RPM"));
+        assert_eq!(m.y_label.as_deref(), Some("IQ"));
+        assert_eq!(m.is_little_endian, Some(true));
+    }
+
+    #[test]
     fn a_file_that_is_not_a_mappack_is_refused() {
         assert!(parse_mappack("not json", 0).is_err());
         assert!(parse_mappack(r#"{"hello":1}"#, 0).is_err());

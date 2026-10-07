@@ -3243,8 +3243,29 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
             const soiX = sXKind === "rpm" ? rpm : sXKind === "iq" ? iq : rpm;
             const soiY = sYKind === "rpm" ? rpm : sYKind === "iq" ? iq : iq;
             const soiValue = atdcSample(atdcSoiPhysicalGrid, soiX, soiY);
+
+            // TI/Duration : priorité absolue à la grille live modifiée.
+            // Le fallback reste la valeur décodée du fichier pour les maps
+            // dont aucun snapshot n'est encore publié.
+            let durationValue = correctedValue;
+            if (durationValues && durationXLabels && durationYLabels) {
+              const durationGrid = {
+                xAxis: durationXLabels.map(Number),
+                yAxis: durationYLabels.map(Number),
+                matrix: durationValues,
+              };
+              const durationX = dXKind === "rpm" ? rpm : dXKind === "iq" ? iq : rpm;
+              const durationY = dYKind === "rpm" ? rpm : dYKind === "iq" ? iq : iq;
+              const liveDuration = atdcSample(durationGrid, durationX, durationY);
+              if (liveDuration != null && Number.isFinite(liveDuration)) {
+                durationValue = liveDuration;
+              }
+            }
+
             if (soiValue != null && Number.isFinite(soiValue)) {
-              finalValue = correctedValue - soiValue;
+              finalValue = durationValue - soiValue;
+            } else {
+              finalValue = durationValue;
             }
           }
 

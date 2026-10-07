@@ -688,8 +688,8 @@ export function MapViewer({
   const { t } = useI18n();
   const isAtdcVirtual = mapData.map_type === "atdc_virtual";
   // Une carte ATDC est recalculée dès qu'une Duration/SOI publie un nouveau
-  // snapshot. Les maps normales restent sur 0 pour ne pas invalider leur cache.
-  const atdcLiveSnapshotRevision = 0;
+  // snapshot. La révision live force le recalcul après chaque édition Duration/SOI.
+  const atdcLiveSnapshotRevision = liveSnapshotVersion;
   const atdcSoi = mapData.atdc_soi_default ?? 90;
   const [atdcRenderOpen, setAtdcRenderOpen] = useState(false);
   const [atdcThreshold, setAtdcThreshold] = useState(0);
@@ -3221,8 +3221,12 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
 
           if (isAtdcVirtual && atdcSoiMap && atdcSoiPhysicalGrid) {
             const durationSource = mapData.atdc_source_duration_map ?? mapData;
-            const dXKind = atdcAxisKind(durationSource.x_label, xLabels.map(Number));
-            const dYKind = atdcAxisKind(durationSource.y_label, yLabels.map(Number));
+            const durationSnapshot = liveMapSnapshots?.get(durationSource.address);
+            const durationValues = durationSnapshot?.sourceMapValues ?? durationSnapshot?.mapValues;
+            const durationXLabels = durationSnapshot?.sourceXAxisLabels ?? durationSnapshot?.xAxisLabels;
+            const durationYLabels = durationSnapshot?.sourceYAxisLabels ?? durationSnapshot?.yAxisLabels;
+            const dXKind = atdcAxisKind(durationSnapshot?.xAxisLabel ?? durationSource.x_label, (durationXLabels ?? xLabels).map(Number));
+            const dYKind = atdcAxisKind(durationSnapshot?.yAxisLabel ?? durationSource.y_label, (durationYLabels ?? yLabels).map(Number));
             const xPhysical = Number.parseFloat(String(xLabels[col] ?? ""));
             const yPhysical = Number.parseFloat(String(yLabels[row] ?? ""));
             const rpm =
@@ -3450,7 +3454,7 @@ const [axesSwapped, setAxesSwapped] = useState<boolean>(false); // Track if axes
       xAxisIsIndex,
       yAxisIsIndex,
     };
-  }, [mapData, fileData, projectName, fileName, displaySettings]);
+  }, [mapData, fileData, projectName, fileName, displaySettings, liveMapSnapshots, liveSnapshotVersion, atdcLiveSnapshotRevision]);
 
   // Reset data when map changes to prevent showing stale data
   useEffect(() => {
